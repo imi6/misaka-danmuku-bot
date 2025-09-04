@@ -70,9 +70,7 @@ ENV PYTHONUNBUFFERED=1 \
 # 切换到非root用户
 USER botuser
 
-# 健康检查：检测机器人进程是否存活（更安全的健康检查）
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD python -c "import sys, os; sys.exit(0 if os.path.exists('/tmp/bot_healthy') else 1)" || exit 1
+
 
 # 暴露端口（如果需要健康检查端点）
 # EXPOSE 8080

@@ -59,6 +59,12 @@ logging.basicConfig(
     handlers=[logging.StreamHandler()]
 )
 
+# 屏蔽 Telegram Bot API 的网络请求日志（如 getUpdates）
+logging.getLogger('httpx').setLevel(logging.WARNING)
+logging.getLogger('httpcore').setLevel(logging.WARNING)
+logging.getLogger('telegram.ext._updater').setLevel(logging.WARNING)
+logging.getLogger('telegram.ext._application').setLevel(logging.WARNING)
+
 # ------------------------------
 # 模块导入与重载核心函数
 # ------------------------------
@@ -427,8 +433,15 @@ if __name__ == "__main__":
         application: Application = loop.run_until_complete(init_bot())
         logger.info("🚀 Bot application initialization complete")
 
-        file_observer = start_file_observer(application)
-        logger.info("🔍 Hot reload service started: changes to handlers/utils/config will take effect automatically")
+        # 检查是否启用热更新功能（开发环境启用，生产环境禁用）
+        enable_hot_reload = os.getenv('ENABLE_HOT_RELOAD', 'false').lower() == 'true'
+        file_observer = None
+        
+        if enable_hot_reload:
+            file_observer = start_file_observer(application)
+            logger.info("🔍 Hot reload service started: changes to handlers/utils/config will take effect automatically")
+        else:
+            logger.info("🔒 Hot reload disabled for production environment")
 
         loop.run_until_complete(application.initialize())
         loop.create_task(application.run_polling(allowed_updates=Update.ALL_TYPES))
@@ -438,7 +451,7 @@ if __name__ == "__main__":
 
     except KeyboardInterrupt:
         logger.info("\n🛑 Received termination signal, starting graceful shutdown...")
-        if 'file_observer' in locals():
+        if 'file_observer' in locals() and file_observer is not None:
             file_observer.stop()
             file_observer.join()
             logger.info("🔍 Hot reload service stopped")

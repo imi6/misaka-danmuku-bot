@@ -24,19 +24,15 @@ services:
       # 可选：其他配置
       - API_TIMEOUT=${API_TIMEOUT:-60}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - TELEGRAM_POLLING_INTERVAL=${TELEGRAM_POLLING_INTERVAL:-30.0}
+      - ENABLE_HOT_RELOAD=${ENABLE_HOT_RELOAD:-false}
       - ENVIRONMENT=production
     
     # 从.env文件加载环境变量
     env_file:
       - .env
     
-    # 健康检查
-    healthcheck:
-      test: ["CMD", "python", "-c", "import sys, os; sys.exit(0 if os.path.exists('/tmp/bot_healthy') else 1)"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
+
     
     # 日志配置
     logging:
