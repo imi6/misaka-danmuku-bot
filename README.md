@@ -14,7 +14,7 @@ version: "3.8"
 services:
   # Telegram弹幕机器人服务
   misaka-danmaku-bot:
-    image: ghcr.io/your-username/misaka-danmuku-bot:latest
+    image: ghcr.io/balge/misaka-danmuku-bot:latest
     container_name: misaka-danmaku-bot
     restart: unless-stopped
     network_mode: host
@@ -67,7 +67,7 @@ docker-compose up -d
 1. 克隆项目：
 
 ```bash
-git clone https://github.com/your-username/misaka-danmuku-bot.git
+git clone https://github.com/balge/misaka-danmuku-bot.git
 cd misaka-danmuku-bot
 ```
 
