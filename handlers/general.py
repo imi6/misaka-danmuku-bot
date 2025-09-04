@@ -8,8 +8,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 仅授权用户可使用以下指令，直接发送指令即可操作：
 
 【📥 媒体导入】
-/search_media [关键词] - 搜索媒体（如：/search_media 火影忍者）
-/direct_import [ID]    - 从搜索结果ID导入（需先/search_media）
+/search [关键词] - 搜索媒体（如：/search 火影忍者）
+/auto - 自动导入媒体（支持关键词搜索和平台ID导入）
 
 【其他】
 /help  - 查看帮助信息

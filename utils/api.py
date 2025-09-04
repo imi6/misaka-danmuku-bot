@@ -1,7 +1,7 @@
 import logging
 import requests
 from typing import Dict, Optional, Any
-from config import DANMAKU_API_BASE_URL, DANMAKU_API_KEY, API_TIMEOUT, DANMAKU_API_HEADERS
+from config import ConfigManager
 
 # 初始化日志
 logger = logging.getLogger(__name__)
@@ -15,14 +15,17 @@ def call_danmaku_api(
     """
     调用Misaka Danmaku API的通用函数（修复URL拼接错误）
     """
+    # 获取配置管理器实例
+    config_manager = ConfigManager()
+    
     # 1. 拼接基础地址与端点（处理首尾斜杠）
-    base_url_with_endpoint = f"{DANMAKU_API_BASE_URL.rstrip('/')}/{endpoint.lstrip('/')}"
+    base_url_with_endpoint = f"{config_manager.danmaku_api.base_url.rstrip('/')}/{endpoint.lstrip('/')}"
     
     # 2. 手动添加api_key参数（避免与其他参数冲突）
     if "?" in base_url_with_endpoint:
-        full_url = f"{base_url_with_endpoint}&api_key={DANMAKU_API_KEY}"
+        full_url = f"{base_url_with_endpoint}&api_key={config_manager.danmaku_api.api_key}"
     else:
-        full_url = f"{base_url_with_endpoint}?api_key={DANMAKU_API_KEY}"
+        full_url = f"{base_url_with_endpoint}?api_key={config_manager.danmaku_api.api_key}"
 
     params = params or {}
     try:
@@ -31,8 +34,8 @@ def call_danmaku_api(
             url=full_url,
             params=params,
             json=json_data,
-            headers=DANMAKU_API_HEADERS,
-            timeout=API_TIMEOUT,
+            headers=config_manager.danmaku_api.headers,
+            timeout=config_manager.app.api_timeout,
             verify=True
         )
         response.raise_for_status()

@@ -13,6 +13,11 @@ logger = logging.getLogger(__name__)
 EPISODES_PER_PAGE = 10  # 每页显示分集数量
 INPUT_EPISODE_RANGE = 1  # 集数输入对话状态
 CALLBACK_DATA_MAX_LEN = 64  # Telegram Bot API限制
+IMPORT_AUTO_KEYWORD_INPUT = 2  # 关键词输入状态
+IMPORT_AUTO_ID_INPUT = 3  # ID输入状态
+IMPORT_AUTO_SEASON_INPUT = 4  # 季度输入状态
+IMPORT_AUTO_EPISODE_INPUT = 5  # 分集输入状态
+IMPORT_AUTO_METHOD_SELECTION = 6  # 导入方式选择状态
 
 
 @check_user_permission
@@ -68,6 +73,189 @@ async def handle_import_callback(update: Update, context: ContextTypes.DEFAULT_T
 ❌ 导入失败：{api_result['error']}
 • 建议：若多次失败，可尝试重新搜索后导入
         """.strip())
+
+
+async def handle_import_auto_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """处理import_auto相关的回调"""
+    query = update.callback_query
+    await query.answer()
+    
+    try:
+        callback_data = json.loads(query.data)
+        action = callback_data.get("action")
+        
+        if action == "import_auto_search_type":
+            return await handle_search_type_selection(update, context, callback_data)
+        elif action == "import_auto_media_type":
+            return await handle_media_type_selection(update, context, callback_data)
+        elif action == "import_auto_method":
+            return await handle_import_method_selection(update, context, callback_data)
+        elif action == "continue_season_import":
+            return await handle_continue_season_import(update, context)
+        elif action == "continue_episode_import":
+            return await handle_continue_episode_import(update, context, callback_data)
+        elif action == "finish_import":
+            return await handle_finish_import(update, context)
+        else:
+            await query.edit_message_text("❌ 未知的操作类型")
+            return ConversationHandler.END
+            
+    except (json.JSONDecodeError, KeyError) as e:
+        logger.error(f"解析import_auto回调数据失败: {e}")
+        await query.answer("❌ 无效的回调数据")
+        return ConversationHandler.END
+
+
+async def handle_search_type_selection(update: Update, context: ContextTypes.DEFAULT_TYPE, callback_data: dict):
+    """处理搜索类型选择"""
+    query = update.callback_query
+    search_type = callback_data.get("type")
+    
+    # 保存搜索类型到上下文
+    context.user_data["import_auto_search_type"] = search_type
+    
+    if search_type == "keyword":
+        # 关键词搜索需要先选择媒体类型
+        keyboard = [
+            [InlineKeyboardButton("📺 电视剧/动漫", callback_data=json.dumps({"action": "import_auto_media_type", "type": "tv_series"}, ensure_ascii=False))],
+            [InlineKeyboardButton("🎬 电影", callback_data=json.dumps({"action": "import_auto_media_type", "type": "movie"}, ensure_ascii=False))]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            "🔍 **关键词搜索**\n\n请选择媒体类型：",
+            reply_markup=reply_markup,
+            parse_mode="Markdown"
+        )
+        # 返回状态2，等待媒体类型选择或关键词输入
+        return IMPORT_AUTO_KEYWORD_INPUT
+    else:
+        # 其他搜索类型需要先选择媒体类型
+        platform_names = {
+            "tmdb": "TMDB",
+            "tvdb": "TVDB", 
+            "douban": "豆瓣",
+            "imdb": "IMDB",
+            "bangumi": "Bangumi"
+        }
+        platform_name = platform_names.get(search_type, search_type.upper())
+        
+        keyboard = [
+            [InlineKeyboardButton("📺 电视剧/动漫", callback_data=json.dumps({"action": "import_auto_media_type", "type": "tv_series"}, ensure_ascii=False))],
+            [InlineKeyboardButton("🎬 电影", callback_data=json.dumps({"action": "import_auto_media_type", "type": "movie"}, ensure_ascii=False))]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            f"🆔 **{platform_name} ID搜索**\n\n请选择媒体类型：",
+            reply_markup=reply_markup,
+            parse_mode="Markdown"
+        )
+        
+        # 返回状态2，等待媒体类型选择
+        return IMPORT_AUTO_KEYWORD_INPUT
+
+
+async def handle_media_type_selection(update: Update, context: ContextTypes.DEFAULT_TYPE, callback_data: dict):
+    """处理媒体类型选择（用于关键词搜索和平台ID搜索）"""
+    query = update.callback_query
+    media_type = callback_data.get("type")
+    
+    # 保存媒体类型到上下文
+    context.user_data["import_auto_media_type"] = media_type
+    
+    type_names = {"tv_series": "电视剧/动漫", "movie": "电影"}
+    type_name = type_names.get(media_type, media_type)
+    
+    # 根据搜索类型决定下一步操作
+    search_type = context.user_data.get("import_auto_search_type", "keyword")
+    
+    if search_type == "keyword":
+        # 关键词搜索：提示输入关键词
+        await query.edit_message_text(
+            f"📝 **{type_name}关键词搜索**\n\n请输入搜索关键词："
+        )
+        return IMPORT_AUTO_KEYWORD_INPUT
+    else:
+        # 平台ID搜索：提示输入ID
+        platform_names = {
+            "tmdb": "TMDB",
+            "tvdb": "TVDB", 
+            "douban": "豆瓣",
+            "imdb": "IMDB",
+            "bangumi": "Bangumi"
+        }
+        platform_name = platform_names.get(search_type, search_type.upper())
+        
+        await query.edit_message_text(
+            f"🆔 **{type_name} {platform_name} ID搜索**\n\n请输入{platform_name} ID："
+        )
+        return IMPORT_AUTO_ID_INPUT
+
+
+async def handle_search_type_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """专门用于ConversationHandler的搜索类型选择回调处理器"""
+    query = update.callback_query
+    await query.answer()
+    
+    try:
+        callback_data = json.loads(query.data)
+        if callback_data.get("action") == "import_auto_search_type":
+            return await handle_search_type_selection(update, context, callback_data)
+    except (json.JSONDecodeError, KeyError) as e:
+        logger.error(f"解析搜索类型回调数据失败: {e}")
+        await query.answer("❌ 无效的回调数据")
+    
+    return ConversationHandler.END
+
+
+async def handle_media_type_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """专门用于ConversationHandler的媒体类型选择回调处理器"""
+    query = update.callback_query
+    await query.answer()
+    
+    try:
+        callback_data = json.loads(query.data)
+        if callback_data.get("action") == "import_auto_media_type":
+            return await handle_media_type_selection(update, context, callback_data)
+    except (json.JSONDecodeError, KeyError) as e:
+        logger.error(f"解析媒体类型回调数据失败: {e}")
+        await query.answer("❌ 无效的回调数据")
+    
+    return ConversationHandler.END
+
+
+async def handle_import_method_selection(update: Update, context: ContextTypes.DEFAULT_TYPE, callback_data: dict):
+    """处理导入方式选择"""
+    query = update.callback_query
+    method = callback_data.get("method")
+    
+    import_params = context.user_data.get("import_auto_params", {})
+    
+    if method == "auto":
+        # 自动导入：发送新消息
+        await query.message.reply_text("🚀 自动导入\n\n正在导入全部内容...")
+        
+        import_params["importMethod"] = "auto"  # 添加导入方式标识
+        from handlers.import_media import call_import_auto_api
+        await call_import_auto_api(update, context, import_params)
+        return ConversationHandler.END
+        
+    elif method == "season":
+        # 分季导入：发送新消息提示输入季度
+        await query.message.reply_text(
+            "📺 分季导入\n\n请输入要导入的季度数字（如：1, 2, 3...）："
+        )
+        return IMPORT_AUTO_SEASON_INPUT
+        
+    elif method == "episode":
+        # 分集导入：发送新消息提示先输入季度
+        await query.message.reply_text(
+            "🎬 分集导入\n\n请先输入季度数字（如：1, 2, 3...）："
+        )
+        # 标记为分集导入模式
+        context.user_data["import_auto_episode_mode"] = True
+        return IMPORT_AUTO_SEASON_INPUT
 
 
 @check_user_permission
@@ -615,4 +803,59 @@ async def cancel_episode_input(update: Update, context: ContextTypes.DEFAULT_TYP
     for key in ["current_result_index", "total_episodes"]:
         if key in context.user_data:
             del context.user_data[key]
+    return ConversationHandler.END
+
+
+# ------------------------------
+# 继续导入相关处理函数
+# ------------------------------
+@check_user_permission
+async def handle_continue_season_import(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """处理继续分季导入"""
+    query = update.callback_query
+    await query.edit_message_text(
+        "📺 继续分季导入\n\n请输入要导入的季度数字（如：1, 2, 3...）："
+    )
+    return IMPORT_AUTO_SEASON_INPUT
+
+
+@check_user_permission
+async def handle_continue_episode_import(update: Update, context: ContextTypes.DEFAULT_TYPE, callback_data: dict):
+    """处理继续分集导入"""
+    query = update.callback_query
+    same_season = callback_data.get("same_season", False)
+    
+    if same_season:
+        # 导入同季其他集数：直接进入集数输入
+        current_season = context.user_data.get("import_auto_season", 1)
+        await query.edit_message_text(
+            f"🎬 继续导入第 {current_season} 季\n\n请输入要导入的集数（如：1, 2, 3...）："
+        )
+        # 标记为分集导入模式
+        context.user_data["import_auto_episode_mode"] = True
+        return IMPORT_AUTO_EPISODE_INPUT
+    else:
+        # 导入其他季度：先输入季度
+        await query.edit_message_text(
+            "📺 继续分集导入\n\n请先输入季度数字（如：1, 2, 3...）："
+        )
+        # 标记为分集导入模式
+        context.user_data["import_auto_episode_mode"] = True
+        return IMPORT_AUTO_SEASON_INPUT
+
+
+@check_user_permission
+async def handle_finish_import(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """处理完成导入"""
+    query = update.callback_query
+    await query.edit_message_text("✅ 导入流程已完成！")
+    
+    # 清理上下文数据
+    keys_to_clear = [
+        "import_auto_params", "import_auto_season", "import_auto_episode",
+        "import_auto_episode_mode"
+    ]
+    for key in keys_to_clear:
+        context.user_data.pop(key, None)
+    
     return ConversationHandler.END

@@ -52,8 +52,9 @@ SEARCH_MEDIA = 0
 # 日志配置（支持 Docker 日志查看）
 # ------------------------------
 logger = logging.getLogger(__name__)
+# 初始化日志配置（稍后会根据配置文件更新）
 logging.basicConfig(
-    level=logging.INFO, # 设置为DEBUG级别，显示详细的热更新过程
+    level=logging.INFO, # 默认级别，稍后会根据配置文件更新
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[logging.StreamHandler()]
 )
@@ -87,8 +88,17 @@ def _import_modules():
     import handlers
     import callback
     
+    # 创建配置管理器实例
+    config_manager = config.ConfigManager()
+    
+    # 更新日志级别
+    log_level = getattr(logging, config_manager.app.log_level.upper(), logging.INFO)
+    logging.getLogger().setLevel(log_level)
+    logger.setLevel(log_level)
+    
     logger.info(f"✅ Cleared {len(modules_to_delete)} cached modules and re-imported")
-    return config, handlers, callback
+    logger.info(f"📝 Log level set to: {config_manager.app.log_level.upper()}")
+    return config_manager, handlers, callback
 
 # ------------------------------
 # 1. 热更新核心：文件变更监听与模块重载
@@ -191,14 +201,28 @@ def _setup_handlers(application, handlers_module, callback_module):
     cancel = handlers_module.cancel
     search_media = handlers_module.search_media
     search_media_input = handlers_module.search_media_input
+    import_auto = handlers_module.import_auto
+    import_auto_keyword_input = handlers_module.import_auto_keyword_input
+    import_auto_id_input = handlers_module.import_auto_id_input
+    import_auto_season_input = handlers_module.import_auto_season_input
+    import_auto_episode_input = handlers_module.import_auto_episode_input
     handle_import_callback = callback_module.handle_import_callback
     handle_get_episode_callback = callback_module.handle_get_episode_callback
     handle_episode_range_input = callback_module.handle_episode_range_input
     cancel_episode_input = callback_module.cancel_episode_input
+    handle_import_auto_callback = callback_module.handle_import_auto_callback
+    handle_search_type_callback = callback_module.handle_search_type_callback
+    handle_media_type_callback = callback_module.handle_media_type_callback
+
+    # 创建import_auto回调处理器（需要在ConversationHandler之前定义）
+    import_auto_callback_handler = CallbackQueryHandler(
+        handle_import_auto_callback,
+        pattern=r'{"action": "(import_auto_(search_type|media_type|method)|continue_(season|episode)_import|finish_import)".*}'
+    )
 
     # 创建会话处理器
     search_handler = ConversationHandler(
-        entry_points=[CommandHandler("search_media", search_media)],
+        entry_points=[CommandHandler("search", search_media)],
         states={
             SEARCH_MEDIA: [MessageHandler(
                 filters.TEXT & ~filters.COMMAND, 
@@ -228,6 +252,65 @@ def _setup_handlers(application, handlers_module, callback_module):
     application.add_handler(episode_input_handler)
     current_handlers["episode_input_handler"] = episode_input_handler
 
+    # 创建import_auto会话处理器
+    import_auto_handler = ConversationHandler(
+        entry_points=[CommandHandler("auto", import_auto)],
+        states={
+            1: [CallbackQueryHandler(  # IMPORT_AUTO_SEARCH_TYPE = 1
+                handle_search_type_callback
+            )],
+            2: [
+                MessageHandler(  # IMPORT_AUTO_KEYWORD_INPUT = 2
+                    filters.TEXT & ~filters.COMMAND,
+                    import_auto_keyword_input
+                ),
+                CallbackQueryHandler(handle_media_type_callback),
+                CallbackQueryHandler(  # Handle import method selection from keyword input
+                    handle_import_auto_callback,
+                    pattern=r'{"action": "import_auto_method".*}'
+                )
+            ],
+            3: [
+                MessageHandler(  # IMPORT_AUTO_ID_INPUT = 3
+                    filters.TEXT & ~filters.COMMAND,
+                    import_auto_id_input
+                ),
+                CallbackQueryHandler(  # Handle import method selection from ID input
+                    handle_import_auto_callback,
+                    pattern=r'{"action": "import_auto_method".*}'
+                )
+            ],
+            4: [
+                MessageHandler(  # IMPORT_AUTO_SEASON_INPUT = 4
+                    filters.TEXT & ~filters.COMMAND,
+                    import_auto_season_input
+                ),
+                CallbackQueryHandler(  # Handle continue import callbacks
+                    handle_import_auto_callback,
+                    pattern=r'{"action": "(continue_season_import|continue_episode_import|finish_import)".*}'
+                )
+            ],
+            5: [
+                MessageHandler(  # IMPORT_AUTO_EPISODE_INPUT = 5
+                    filters.TEXT & ~filters.COMMAND,
+                    import_auto_episode_input
+                ),
+                CallbackQueryHandler(  # Handle continue import callbacks
+                    handle_import_auto_callback,
+                    pattern=r'{"action": "(continue_season_import|continue_episode_import|finish_import)".*}'
+                )
+            ],
+            6: [CallbackQueryHandler(  # IMPORT_AUTO_METHOD_SELECTION = 6
+                handle_import_auto_callback,
+                pattern=r'{"action": "import_auto_method".*}'
+            )],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+        allow_reentry=True,  # 允许重新进入对话
+    )
+    application.add_handler(import_auto_handler)
+    current_handlers["import_auto_handler"] = import_auto_handler
+
     # 创建命令处理器
     start_handler = CommandHandler("start", start)
     help_handler = CommandHandler("help", help_command)
@@ -256,28 +339,32 @@ def _setup_handlers(application, handlers_module, callback_module):
     application.add_handler(get_episode_callback_handler)
     current_handlers["get_episode_callback_handler"] = get_episode_callback_handler
 
+    # 添加import_auto回调处理器到application
+    application.add_handler(import_auto_callback_handler)
+    current_handlers["import_auto_callback_handler"] = import_auto_callback_handler
+
 
 async def init_bot() -> Application:
     """创建机器人应用实例，并完成初始处理器注册"""
     # 步骤1: 使用我们新的导入函数，获取最新的模块引用
-    config, handlers, callback = _import_modules()
+    config_manager, handlers, callback = _import_modules()
 
     # 步骤2: 创建 Telegram 机器人应用
-    builder = ApplicationBuilder().token(config.TELEGRAM_BOT_TOKEN)
+    builder = ApplicationBuilder().token(config_manager.telegram.bot_token)
     
     # 配置连接超时（增加超时时间以应对网络延迟）
-    builder = builder.connect_timeout(config.TELEGRAM_CONNECT_TIMEOUT).read_timeout(config.TELEGRAM_READ_TIMEOUT).write_timeout(config.TELEGRAM_READ_TIMEOUT)
+    builder = builder.connect_timeout(config_manager.app.api_timeout).read_timeout(config_manager.app.api_timeout).write_timeout(config_manager.app.api_timeout)
     
     # 配置连接池（解决连接池占满的问题）
-    builder = builder.pool_timeout(config.TELEGRAM_POOL_TIMEOUT).connection_pool_size(config.TELEGRAM_CONNECTION_POOL_SIZE)
+    builder = builder.pool_timeout(config_manager.app.api_timeout).connection_pool_size(8)
     
     # 配置代理（如果设置了的话）
-    if config.SOCKS_PROXY_URL:
-        logger.info(f"🌐 Using SOCKS proxy: {config.SOCKS_PROXY_URL}")
-        builder = builder.proxy_url(config.SOCKS_PROXY_URL)
-    elif config.HTTP_PROXY_URL:
-        logger.info(f"🌐 Using HTTP proxy: {config.HTTP_PROXY_URL}")
-        builder = builder.proxy_url(config.HTTP_PROXY_URL)
+    if config_manager.proxy and config_manager.proxy.socks_url:
+        logger.info(f"🌐 Using SOCKS proxy: {config_manager.proxy.socks_url}")
+        builder = builder.proxy_url(config_manager.proxy.socks_url)
+    elif config_manager.proxy and config_manager.proxy.http_url:
+        logger.info(f"🌐 Using HTTP proxy: {config_manager.proxy.http_url}")
+        builder = builder.proxy_url(config_manager.proxy.http_url)
     else:
         logger.info("🌐 No proxy configured, using direct connection")
     
