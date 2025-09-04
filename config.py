@@ -41,12 +41,41 @@ if not DANMAKU_API_KEY:
     raise ValueError("❌ 请在.env文件中配置DANMAKU_API_KEY（从弹幕系统获取）")
 
 # ------------------------------
+# 代理配置（可选）
+# ------------------------------
+# SOCKS代理配置（可选，格式：socks5://127.0.0.1:1080）
+SOCKS_PROXY_URL: str = os.getenv("SOCKS_PROXY_URL", "")
+
+# HTTP代理配置（可选，格式：http://127.0.0.1:8080）
+HTTP_PROXY_URL: str = os.getenv("HTTP_PROXY_URL", "")
+
+# ------------------------------
 # 通用配置
 # ------------------------------
-# API请求超时时间（默认10秒）
+# API请求超时时间（默认60秒）
 API_TIMEOUT: int = int(os.getenv("API_TIMEOUT", 60))
 if API_TIMEOUT <= 0:
     API_TIMEOUT = 60
+
+# Telegram连接超时时间（默认30秒）
+TELEGRAM_CONNECT_TIMEOUT: float = float(os.getenv("TELEGRAM_CONNECT_TIMEOUT", 30.0))
+if TELEGRAM_CONNECT_TIMEOUT <= 0:
+    TELEGRAM_CONNECT_TIMEOUT = 30.0
+
+# Telegram读取超时时间（默认30秒）
+TELEGRAM_READ_TIMEOUT: float = float(os.getenv("TELEGRAM_READ_TIMEOUT", 30.0))
+if TELEGRAM_READ_TIMEOUT <= 0:
+    TELEGRAM_READ_TIMEOUT = 30.0
+
+# Telegram连接池超时时间（默认60秒）
+TELEGRAM_POOL_TIMEOUT: float = float(os.getenv("TELEGRAM_POOL_TIMEOUT", 60.0))
+if TELEGRAM_POOL_TIMEOUT <= 0:
+    TELEGRAM_POOL_TIMEOUT = 60.0
+
+# Telegram连接池大小（默认20个连接）
+TELEGRAM_CONNECTION_POOL_SIZE: int = int(os.getenv("TELEGRAM_CONNECTION_POOL_SIZE", 20))
+if TELEGRAM_CONNECTION_POOL_SIZE <= 0:
+    TELEGRAM_CONNECTION_POOL_SIZE = 20
 
 # 日志级别（默认INFO）
 LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO").upper()
