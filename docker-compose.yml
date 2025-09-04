@@ -19,16 +19,6 @@ services:
       - ENABLE_HOT_RELOAD=${ENABLE_HOT_RELOAD:-false}
       - ENVIRONMENT=production
     
-    # 健康检查配置
-    healthcheck:
-      test: ["CMD", "pgrep", "-f", "python bot.py", "||", "exit", "1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-    
-
-    
     # 日志配置
     logging:
       driver: "json-file"

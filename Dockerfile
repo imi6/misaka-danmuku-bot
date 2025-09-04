@@ -81,9 +81,5 @@ LABEL maintainer="Bot Developer" \
       version="1.0" \
       description="Misaka Danmaku Telegram Bot"
 
-# 健康检查配置
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD pgrep -f "python bot.py" || exit 1
-
 # 启动命令（使用exec确保信号能正确传递给Python进程）
 CMD ["python", "-u", "bot.py"]
