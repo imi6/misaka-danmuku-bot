@@ -51,7 +51,7 @@ USER botuser
 
 # 健康检查：检测机器人进程是否存活（根据实际情况调整）
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD python -c "import requests; requests.get('https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/getMe', timeout=5)" || exit 1
+    CMD pgrep -f "python bot.py" || exit 1
 
 # 启动命令（使用exec确保信号能正确传递给Python进程）
 CMD ["python", "bot.py"]
