@@ -1,16 +1,47 @@
 version: '3.8'
 
 services:
-  misaka-bot:
-    build:
-      context: .
-      dockerfile: Dockerfile
+  misaka-danmaku-bot:
+    build: .
+    container_name: misaka-danmaku-bot
+    restart: unless-stopped
+    
+    # 从.env文件加载环境变量
     env_file:
       - .env
-    restart: unless-stopped
+    
+    # 可选：代理配置（Docker标准环境变量）
+    environment:
+      - HTTP_PROXY=${HTTP_PROXY:-}
+      - HTTPS_PROXY=${HTTPS_PROXY:-}
+      - NO_PROXY=${NO_PROXY:-localhost,127.0.0.1}
+      - TELEGRAM_POLLING_INTERVAL=${TELEGRAM_POLLING_INTERVAL:-30.0}
+      - ENABLE_HOT_RELOAD=${ENABLE_HOT_RELOAD:-false}
+      - ENVIRONMENT=production
+    
+    # 健康检查配置
     healthcheck:
       test: ["CMD", "pgrep", "-f", "python bot.py", "||", "exit", "1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
+    
+
+    
+    # 日志配置
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    # 资源限制
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
