@@ -16,7 +16,7 @@ from watchdog.events import (
 # ------------------------------
 # Telegram 相关模块导入
 # ------------------------------
-from telegram import Update
+from telegram import Update, BotCommand
 from telegram.ext import (
     ApplicationBuilder,
     CallbackQueryHandler,
@@ -194,6 +194,22 @@ class CodeChangeHandler(FileSystemEventHandler):
 # ------------------------------
 # 2. 机器人初始化（含初始处理器注册）
 # ------------------------------
+async def _setup_bot_commands(application: Application):
+    """设置 Bot 命令菜单，让用户在 Telegram 客户端看到可用命令"""
+    commands = [
+        BotCommand("start", "开始使用机器人 - 查看欢迎信息和指令列表"),
+        BotCommand("auto", "自动导入媒体 - 支持关键词搜索和平台ID导入"),
+        BotCommand("search", "搜索媒体 - 根据关键词搜索媒体内容"),
+        BotCommand("help", "查看帮助信息 - 显示所有可用指令"),
+        BotCommand("cancel", "取消当前操作 - 退出当前对话流程")
+    ]
+    
+    try:
+        await application.bot.set_my_commands(commands)
+        logger.info(f"✅ Bot commands menu set successfully: {len(commands)} commands")
+    except Exception as e:
+        logger.error(f"❌ Failed to set bot commands: {e}")
+
 def _setup_handlers(application, handlers_module, callback_module):
     """通用的处理器设置函数"""
     start = handlers_module.start
@@ -247,7 +263,7 @@ def _setup_handlers(application, handlers_module, callback_module):
             )],
         },
         fallbacks=[CommandHandler("cancel", cancel_episode_input)],
-        per_message=False,  # 修复CallbackQueryHandler跟踪警告
+        per_message=False,  # 混合处理器类型时使用 False
     )
     application.add_handler(episode_input_handler)
     current_handlers["episode_input_handler"] = episode_input_handler
@@ -307,6 +323,7 @@ def _setup_handlers(application, handlers_module, callback_module):
         },
         fallbacks=[CommandHandler("cancel", cancel)],
         allow_reentry=True,  # 允许重新进入对话
+        per_message=False,  # 混合处理器类型时使用 False
     )
     application.add_handler(import_auto_handler)
     current_handlers["import_auto_handler"] = import_auto_handler
@@ -358,13 +375,11 @@ async def init_bot() -> Application:
     # 配置连接池（解决连接池占满的问题）
     builder = builder.pool_timeout(config_manager.app.api_timeout).connection_pool_size(8)
     
-    # 配置代理（如果设置了的话）
-    if config_manager.proxy and config_manager.proxy.socks_url:
-        logger.info(f"🌐 Using SOCKS proxy: {config_manager.proxy.socks_url}")
-        builder = builder.proxy_url(config_manager.proxy.socks_url)
-    elif config_manager.proxy and config_manager.proxy.http_url:
-        logger.info(f"🌐 Using HTTP proxy: {config_manager.proxy.http_url}")
-        builder = builder.proxy_url(config_manager.proxy.http_url)
+    # 配置代理（基于Docker环境变量）
+    if config_manager.proxy and config_manager.proxy.enabled:
+        proxy_url = config_manager.proxy.url
+        logger.info(f"🌐 Using proxy from Docker environment: {proxy_url}")
+        builder = builder.proxy(proxy_url)
     else:
         logger.info("🌐 No proxy configured, using direct connection")
     
@@ -372,6 +387,9 @@ async def init_bot() -> Application:
 
     # 步骤3: 注册初始处理器
     _setup_handlers(application, handlers, callback)
+
+    # 步骤4: 设置 Bot 命令菜单
+    await _setup_bot_commands(application)
 
     logger.info("✅ Initial bot handlers registered")
     return application

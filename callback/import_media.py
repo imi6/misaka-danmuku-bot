@@ -65,7 +65,6 @@ async def handle_import_callback(update: Update, context: ContextTypes.DEFAULT_T
         await query.message.reply_text(f"""
 🎉 导入请求已提交成功！
 • 任务ID：{data.get('taskId', '无')}
-• 提示：可稍后用 /get_anime [作品ID] 查看详情
         """.strip())
     else:
         # 发送失败原因
@@ -775,7 +774,6 @@ async def handle_episode_range_input(update: Update, context: ContextTypes.DEFAU
                 f"🎉 批量导入请求已提交成功！\n"
                 f"• 任务ID：{data.get('taskId', '无')}\n"
                 f"• 导入集数：{len(sorted_indices)} 集\n"
-                f"• 提示：可稍后用 /get_anime [作品ID] 查看详情"
             )
         else:
             error_msg = api_result.get("error", "未知错误")

@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  misaka-danmaku-bot:
+    build: .
+    container_name: misaka-danmaku-bot
+    restart: unless-stopped
+    
+    # 环境变量配置
+    environment:
+      # Telegram Bot 配置（必填）
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - ALLOWED_USER_IDS=${ALLOWED_USER_IDS}
+      
+      # Misaka Danmaku API 配置（必填）
+      - DANMAKU_API_BASE_URL=${DANMAKU_API_BASE_URL}
+      - DANMAKU_API_KEY=${DANMAKU_API_KEY}
+      
+      # 可选：代理配置（Docker标准环境变量）
+      - HTTP_PROXY=${HTTP_PROXY:-}
+      - HTTPS_PROXY=${HTTPS_PROXY:-}
+      - NO_PROXY=${NO_PROXY:-localhost,127.0.0.1}
+      
+      # 可选：其他配置
+      - API_TIMEOUT=${API_TIMEOUT:-60}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - ENVIRONMENT=production
+    
+    # 从.env文件加载环境变量
+    env_file:
+      - .env
+    
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys, os; sys.exit(0 if os.path.exists('/tmp/bot_healthy') else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    
+    # 日志配置
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    # 资源限制
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+        reservations:
+          memory: 128M
+          cpus: '0.1'

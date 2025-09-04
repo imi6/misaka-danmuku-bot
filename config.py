@@ -79,26 +79,27 @@ class DanmakuAPIConfig:
 
 @dataclass
 class ProxyConfig:
-    """代理配置"""
-    socks_url: Optional[str] = None
-    http_url: Optional[str] = None
+    """代理配置（使用Docker环境变量）"""
     
     def __post_init__(self):
-        # 验证代理URL格式
-        if self.socks_url and not self.socks_url.startswith('socks'):
-            logger.warning("⚠️ SOCKS代理URL格式可能不正确，应以socks开头")
-        if self.http_url and not self.http_url.startswith('http'):
-            logger.warning("⚠️ HTTP代理URL格式可能不正确，应以http开头")
+        # 检查Docker代理环境变量
+        http_proxy = os.getenv('HTTP_PROXY') or os.getenv('http_proxy')
+        https_proxy = os.getenv('HTTPS_PROXY') or os.getenv('https_proxy')
+        
+        if http_proxy or https_proxy:
+            logger.info(f"🌐 检测到Docker代理配置: HTTP_PROXY={http_proxy}, HTTPS_PROXY={https_proxy}")
     
     @property
     def enabled(self) -> bool:
-        """检查代理是否启用"""
-        return bool(self.socks_url or self.http_url)
+        """检查代理是否启用（基于Docker环境变量）"""
+        return bool(os.getenv('HTTP_PROXY') or os.getenv('http_proxy') or 
+                   os.getenv('HTTPS_PROXY') or os.getenv('https_proxy'))
     
     @property
     def url(self) -> Optional[str]:
-        """获取代理URL（优先返回SOCKS代理）"""
-        return self.socks_url or self.http_url
+        """获取代理URL（优先返回HTTPS代理）"""
+        return (os.getenv('HTTPS_PROXY') or os.getenv('https_proxy') or 
+                os.getenv('HTTP_PROXY') or os.getenv('http_proxy'))
 
 
 @dataclass
@@ -173,11 +174,8 @@ class ConfigManager:
                 timeout=int(os.getenv("API_TIMEOUT", 60))
             )
             
-            # 加载代理配置
-            self._proxy = ProxyConfig(
-                socks_url=os.getenv("SOCKS_PROXY_URL") or None,
-                http_url=os.getenv("HTTP_PROXY_URL") or None
-            )
+            # 加载代理配置（基于Docker环境变量）
+            self._proxy = ProxyConfig()
             
             # 加载应用配置
             self._app = AppConfig(
@@ -246,8 +244,8 @@ class ConfigManager:
                 "timeout": self.danmaku_api.timeout
             },
             "proxy": {
-                "socks_enabled": bool(self.proxy.socks_url),
-                "http_enabled": bool(self.proxy.http_url)
+                "enabled": self.proxy.enabled,
+                "url": self.proxy.url if self.proxy.enabled else "未配置"
             },
             "app": {
                 "log_level": self.app.log_level,
@@ -267,8 +265,8 @@ DANMAKU_API_BASE_URL = config.danmaku_api.base_url
 DANMAKU_API_KEY = config.danmaku_api.api_key
 DANMAKU_API_HEADERS = config.danmaku_api.headers
 API_TIMEOUT = config.danmaku_api.timeout
-SOCKS_PROXY_URL = config.proxy.socks_url or ""
-HTTP_PROXY_URL = config.proxy.http_url or ""
+# 代理配置现在通过Docker环境变量处理
+# SOCKS_PROXY_URL 和 HTTP_PROXY_URL 已废弃，请使用 HTTP_PROXY 和 HTTPS_PROXY
 TELEGRAM_CONNECT_TIMEOUT = config.telegram.connect_timeout
 TELEGRAM_READ_TIMEOUT = config.telegram.read_timeout
 TELEGRAM_POOL_TIMEOUT = config.telegram.pool_timeout
