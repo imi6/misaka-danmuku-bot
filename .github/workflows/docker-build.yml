@@ -120,13 +120,13 @@ jobs:
             type=raw,value=latest,enable=${{ github.event_name == 'release' }}
             type=ref,event=tag
           labels: |
-            org.opencontainers.image.title={{.Name}}
+            org.opencontainers.image.title=${{ github.repository }}
             org.opencontainers.image.description=Telegram弹幕机器人
-            org.opencontainers.image.url={{.HTMLURL}}
-            org.opencontainers.image.source={{.HTMLURL}}
-            org.opencontainers.image.version={{.Version}}
-            org.opencontainers.image.created={{.Date}}
-            org.opencontainers.image.revision={{.FullCommit}}
+            org.opencontainers.image.url=${{ github.event.repository.html_url }}
+            org.opencontainers.image.source=${{ github.event.repository.html_url }}
+            org.opencontainers.image.version=${{ github.ref_name }}
+            org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
+            org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.licenses=MIT
 
       # 步骤7：构建并推送镜像（支持多架构：amd64/arm64）
