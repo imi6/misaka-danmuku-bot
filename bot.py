@@ -277,6 +277,8 @@ def _setup_handlers(application, handlers_module, callback_module):
     handle_import_auto_callback = callback_module.handle_import_auto_callback
     handle_search_type_callback = callback_module.handle_search_type_callback
     handle_media_type_callback = callback_module.handle_media_type_callback
+    
+
 
     # 创建import_auto回调处理器（需要在ConversationHandler之前定义）
     import_auto_callback_handler = CallbackQueryHandler(
@@ -288,17 +290,25 @@ def _setup_handlers(application, handlers_module, callback_module):
     search_handler = ConversationHandler(
         entry_points=[CommandHandler("search", _wrap_conversation_entry_point(search_media))],
         states={
-            SEARCH_MEDIA: [MessageHandler(
-                filters.TEXT & ~filters.COMMAND, 
-                _wrap_with_session_management(search_media_input)
-            )],
+            SEARCH_MEDIA: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND, 
+                    _wrap_with_session_management(search_media_input)
+                )
+            ],
             SEARCH_RESULTS: [
                 # 在搜索结果状态下，用户可以点击按钮或取消
                 # 按钮点击由独立的CallbackQueryHandler处理
                 CommandHandler("cancel", _wrap_with_session_management(cancel))
             ],
         },
-        fallbacks=[CommandHandler("cancel", _wrap_with_session_management(cancel))],
+        fallbacks=[
+            CommandHandler("cancel", _wrap_with_session_management(cancel)),
+            CommandHandler("search", _wrap_conversation_entry_point(search_media)),
+            CommandHandler("auto", _wrap_conversation_entry_point(import_auto)),
+            CommandHandler("start", _wrap_with_session_management(start)),
+            CommandHandler("help", _wrap_with_session_management(help_command))
+        ],
     )
     application.add_handler(search_handler)
     current_handlers["search_handler"] = search_handler
@@ -310,12 +320,20 @@ def _setup_handlers(application, handlers_module, callback_module):
             pattern=r'{"(action|a)": "start_input_range".*}'
         )],  # 通过"输入集数区间"回调按钮触发
         states={
-            1: [MessageHandler(  # INPUT_EPISODE_RANGE = 1
-                filters.TEXT & ~filters.COMMAND,
-                _wrap_with_session_management(handle_episode_range_input)
-            )],
+            1: [
+                MessageHandler(  # INPUT_EPISODE_RANGE = 1
+                    filters.TEXT & ~filters.COMMAND,
+                    _wrap_with_session_management(handle_episode_range_input)
+                )
+            ],
         },
-        fallbacks=[CommandHandler("cancel", _wrap_with_session_management(cancel_episode_input))],
+        fallbacks=[
+            CommandHandler("cancel", _wrap_with_session_management(cancel_episode_input)),
+            CommandHandler("search", _wrap_conversation_entry_point(search_media)),
+            CommandHandler("auto", _wrap_conversation_entry_point(import_auto)),
+            CommandHandler("start", _wrap_with_session_management(start)),
+            CommandHandler("help", _wrap_with_session_management(help_command))
+        ],
         # 使用默认的 per_* 设置以避免混合处理器类型的警告
         per_chat=True,   # 每个聊天独立跟踪对话状态
         per_user=True,   # 每个用户独立跟踪对话状态
@@ -376,7 +394,13 @@ def _setup_handlers(application, handlers_module, callback_module):
                 pattern=r'{"action": "import_auto_method".*}'
             )],
         },
-        fallbacks=[CommandHandler("cancel", _wrap_with_session_management(cancel))],
+        fallbacks=[
+            CommandHandler("cancel", _wrap_with_session_management(cancel)),
+            CommandHandler("search", _wrap_conversation_entry_point(search_media)),
+            CommandHandler("auto", _wrap_conversation_entry_point(import_auto)),
+            CommandHandler("start", _wrap_with_session_management(start)),
+            CommandHandler("help", _wrap_with_session_management(help_command))
+        ],
         allow_reentry=True,  # 允许重新进入对话
         # 使用默认的 per_* 设置以避免混合处理器类型的警告
         per_chat=True,       # 每个聊天独立跟踪对话状态
