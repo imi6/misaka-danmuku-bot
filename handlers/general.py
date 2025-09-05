@@ -10,6 +10,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 【📥 媒体导入】
 /search [关键词] - 搜索媒体（如：/search 火影忍者）
 /auto - 自动导入媒体（支持关键词搜索和平台ID导入）
+/url - URL导入媒体（支持关键词搜索和URL导入）
+
+【🔑 Token管理】
+/tokens - 管理API访问令牌
 
 【其他】
 /help  - 查看帮助信息
@@ -21,6 +25,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 创建自定义键盘，提供快捷按钮
     keyboard = [
         [KeyboardButton("/search"), KeyboardButton("/auto")],
+        [KeyboardButton("/url"), KeyboardButton("/tokens")],
         [KeyboardButton("/help"), KeyboardButton("/cancel")]
     ]
     reply_markup = ReplyKeyboardMarkup(
@@ -41,6 +46,10 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 【📥 媒体导入】
 /search [关键词] - 搜索媒体（如：/search 火影忍者）
 /auto - 自动导入媒体（支持关键词搜索和平台ID导入）
+/url - URL导入媒体（支持关键词搜索和URL导入）
+
+【🔑 Token管理】
+/tokens - 管理API访问令牌
 
 【其他】
 /help  - 查看帮助信息
