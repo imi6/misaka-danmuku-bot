@@ -230,6 +230,7 @@ async def _setup_bot_commands(application: Application):
         BotCommand("start", "开始使用机器人 - 查看欢迎信息和指令列表"),
         BotCommand("auto", "自动导入媒体 - 支持关键词搜索和平台ID导入"),
         BotCommand("search", "搜索媒体 - 根据关键词搜索媒体内容"),
+        BotCommand("url", "URL导入 - 通过URL导入视频到动漫库"),
         BotCommand("help", "查看帮助信息 - 显示所有可用指令"),
         BotCommand("cancel", "取消当前操作 - 退出当前对话流程")
     ]
@@ -277,6 +278,9 @@ def _setup_handlers(application, handlers_module, callback_module):
     handle_import_auto_callback = callback_module.handle_import_auto_callback
     handle_search_type_callback = callback_module.handle_search_type_callback
     handle_media_type_callback = callback_module.handle_media_type_callback
+    
+    # 导入import_url处理器
+    from handlers.import_url import create_import_url_handler
     
 
 
@@ -440,6 +444,11 @@ def _setup_handlers(application, handlers_module, callback_module):
     # 添加import_auto回调处理器到application
     application.add_handler(import_auto_callback_handler)
     current_handlers["import_auto_callback_handler"] = import_auto_callback_handler
+    
+    # 创建并注册import_url处理器
+    import_url_handler = create_import_url_handler()
+    application.add_handler(import_url_handler)
+    current_handlers["import_url_handler"] = import_url_handler
 
 
 async def init_bot() -> Application:
@@ -475,6 +484,13 @@ async def init_bot() -> Application:
 
     # 步骤5: 设置 Bot 命令菜单
     await _setup_bot_commands(application)
+    
+    # 步骤6: 初始化动漫库缓存
+    try:
+        from handlers.import_url import init_library_cache
+        await init_library_cache()
+    except Exception as e:
+        logger.warning(f"⚠️ 影视库缓存初始化失败: {e}")
 
     logger.info("✅ Initial bot handlers registered")
     return application
