@@ -10,8 +10,9 @@ from utils.permission import check_user_permission
 logger = logging.getLogger(__name__)
 # 对话状态（仅保留搜索相关）
 SEARCH_MEDIA = 0
+SEARCH_RESULTS = 1  # 搜索结果展示状态，等待用户点击按钮
 EPISODES_PER_PAGE = 10  # 每页显示分集数量
-INPUT_EPISODE_RANGE = 1  # 集数输入对话状态
+INPUT_EPISODE_RANGE = 2  # 集数输入对话状态
 CALLBACK_DATA_MAX_LEN = 60
 
 # import_auto 对话状态
@@ -28,8 +29,7 @@ async def search_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 1. 直接带参数（如：/search 海贼王）
     if context.args:
         keyword = " ".join(context.args)
-        await process_search_media(update, keyword, context)
-        return
+        return await process_search_media(update, keyword, context)
 
     # 2. 无参数：引导用户输入关键词
     await update.message.reply_text("请输入要搜索的媒体关键词（如：海贼王、进击的巨人）：")
@@ -43,8 +43,7 @@ async def search_media_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("❌ 关键词不能为空，请重新输入：")
         return SEARCH_MEDIA
 
-    await process_search_media(update, keyword, context)
-    return ConversationHandler.END
+    return await process_search_media(update, keyword, context)
 
 
 async def process_search_media(update: Update, keyword: str, context: ContextTypes.DEFAULT_TYPE):
@@ -116,6 +115,9 @@ async def process_search_media(update: Update, keyword: str, context: ContextTyp
             reply_markup=reply_markup,
             parse_mode=None  # 避免特殊符号解析错误
         )
+    
+    # 返回搜索结果状态，保持对话继续
+    return SEARCH_RESULTS
 
 
 @check_user_permission

@@ -29,6 +29,11 @@ from telegram.ext import (
 )
 
 # ------------------------------
+# 轮询管理器导入
+# ------------------------------
+from utils.polling_manager import DynamicPollingManager
+
+# ------------------------------
 # 全局配置常量
 # ------------------------------
 # 热更新监听目录/文件（核心业务逻辑相关）
@@ -47,6 +52,7 @@ EXCLUDE_PATTERNS = [
 current_handlers: Dict[str, "Handler"] = {}
 # 对话状态常量（仅保留搜索媒体相关）
 SEARCH_MEDIA = 0
+SEARCH_RESULTS = 1
 
 # ------------------------------
 # 日志配置（支持 Docker 日志查看）
@@ -59,11 +65,15 @@ logging.basicConfig(
     handlers=[logging.StreamHandler()]
 )
 
-# 屏蔽 Telegram Bot API 的网络请求日志（如 getUpdates）
+# 设置第三方库的日志级别为 WARNING，减少噪音
 logging.getLogger('httpx').setLevel(logging.WARNING)
 logging.getLogger('httpcore').setLevel(logging.WARNING)
 logging.getLogger('telegram.ext._updater').setLevel(logging.WARNING)
 logging.getLogger('telegram.ext._application').setLevel(logging.WARNING)
+
+# 过滤 PTB 的 ConversationHandler 警告（这些警告不影响功能）
+import warnings
+warnings.filterwarnings('ignore', message='.*per_message.*CallbackQueryHandler.*', category=UserWarning)
 
 # ------------------------------
 # 模块导入与重载核心函数
@@ -200,6 +210,20 @@ class CodeChangeHandler(FileSystemEventHandler):
 # ------------------------------
 # 2. 机器人初始化（含初始处理器注册）
 # ------------------------------
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """全局错误处理器：记录所有未处理的异常"""
+    logger.error(f"❌ Exception while handling an update: {context.error}", exc_info=context.error)
+    
+    # 如果有用户更新，尝试发送错误消息给用户
+    if isinstance(update, Update) and update.effective_chat:
+        try:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="⚠️ 抱歉，处理您的请求时发生了错误。请稍后重试或联系管理员。"
+            )
+        except Exception as e:
+            logger.error(f"❌ Failed to send error message to user: {e}")
+
 async def _setup_bot_commands(application: Application):
     """设置 Bot 命令菜单，让用户在 Telegram 客户端看到可用命令"""
     commands = [
@@ -215,6 +239,24 @@ async def _setup_bot_commands(application: Application):
         logger.info(f"✅ Bot commands menu set successfully: {len(commands)} commands")
     except Exception as e:
         logger.error(f"❌ Failed to set bot commands: {e}")
+
+def _wrap_with_session_management(handler_func):
+    """包装处理器函数，记录用户活动"""
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        # 记录用户活动
+        if polling_manager is not None:
+            polling_manager.record_user_activity()
+        return await handler_func(update, context)
+    return wrapper
+
+def _wrap_conversation_entry_point(handler_func):
+    """包装对话入口点处理器，记录用户活动"""
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        # 记录用户活动
+        if polling_manager is not None:
+            polling_manager.record_user_activity()
+        return await handler_func(update, context)
+    return wrapper
 
 def _setup_handlers(application, handlers_module, callback_module):
     """通用的处理器设置函数"""
@@ -238,20 +280,25 @@ def _setup_handlers(application, handlers_module, callback_module):
 
     # 创建import_auto回调处理器（需要在ConversationHandler之前定义）
     import_auto_callback_handler = CallbackQueryHandler(
-        handle_import_auto_callback,
+        _wrap_with_session_management(handle_import_auto_callback),
         pattern=r'{"action": "(import_auto_(search_type|media_type|method)|continue_(season|episode)_import|finish_import)".*}'
     )
 
     # 创建会话处理器
     search_handler = ConversationHandler(
-        entry_points=[CommandHandler("search", search_media)],
+        entry_points=[CommandHandler("search", _wrap_conversation_entry_point(search_media))],
         states={
             SEARCH_MEDIA: [MessageHandler(
                 filters.TEXT & ~filters.COMMAND, 
-                search_media_input
+                _wrap_with_session_management(search_media_input)
             )],
+            SEARCH_RESULTS: [
+                # 在搜索结果状态下，用户可以点击按钮或取消
+                # 按钮点击由独立的CallbackQueryHandler处理
+                CommandHandler("cancel", _wrap_with_session_management(cancel))
+            ],
         },
-        fallbacks=[CommandHandler("cancel", cancel)],
+        fallbacks=[CommandHandler("cancel", _wrap_with_session_management(cancel))],
     )
     application.add_handler(search_handler)
     current_handlers["search_handler"] = search_handler
@@ -259,77 +306,81 @@ def _setup_handlers(application, handlers_module, callback_module):
     # 创建集数输入会话处理器
     episode_input_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(
-            handle_get_episode_callback,
+            _wrap_conversation_entry_point(handle_get_episode_callback),
             pattern=r'{"(action|a)": "start_input_range".*}'
         )],  # 通过"输入集数区间"回调按钮触发
         states={
             1: [MessageHandler(  # INPUT_EPISODE_RANGE = 1
                 filters.TEXT & ~filters.COMMAND,
-                handle_episode_range_input
+                _wrap_with_session_management(handle_episode_range_input)
             )],
         },
-        fallbacks=[CommandHandler("cancel", cancel_episode_input)],
-        per_message=False,  # 混合处理器类型时使用 False
+        fallbacks=[CommandHandler("cancel", _wrap_with_session_management(cancel_episode_input))],
+        # 使用默认的 per_* 设置以避免混合处理器类型的警告
+        per_chat=True,   # 每个聊天独立跟踪对话状态
+        per_user=True,   # 每个用户独立跟踪对话状态
     )
     application.add_handler(episode_input_handler)
     current_handlers["episode_input_handler"] = episode_input_handler
 
     # 创建import_auto会话处理器
     import_auto_handler = ConversationHandler(
-        entry_points=[CommandHandler("auto", import_auto)],
+        entry_points=[CommandHandler("auto", _wrap_conversation_entry_point(import_auto))],
         states={
             1: [CallbackQueryHandler(  # IMPORT_AUTO_SEARCH_TYPE = 1
-                handle_search_type_callback
+                _wrap_with_session_management(handle_search_type_callback)
             )],
             2: [
                 MessageHandler(  # IMPORT_AUTO_KEYWORD_INPUT = 2
                     filters.TEXT & ~filters.COMMAND,
-                    import_auto_keyword_input
+                    _wrap_with_session_management(import_auto_keyword_input)
                 ),
-                CallbackQueryHandler(handle_media_type_callback),
+                CallbackQueryHandler(_wrap_with_session_management(handle_media_type_callback)),
                 CallbackQueryHandler(  # Handle import method selection from keyword input
-                    handle_import_auto_callback,
+                    _wrap_with_session_management(handle_import_auto_callback),
                     pattern=r'{"action": "import_auto_method".*}'
                 )
             ],
             3: [
                 MessageHandler(  # IMPORT_AUTO_ID_INPUT = 3
                     filters.TEXT & ~filters.COMMAND,
-                    import_auto_id_input
+                    _wrap_with_session_management(import_auto_id_input)
                 ),
                 CallbackQueryHandler(  # Handle import method selection from ID input
-                    handle_import_auto_callback,
+                    _wrap_with_session_management(handle_import_auto_callback),
                     pattern=r'{"action": "import_auto_method".*}'
                 )
             ],
             4: [
                 MessageHandler(  # IMPORT_AUTO_SEASON_INPUT = 4
                     filters.TEXT & ~filters.COMMAND,
-                    import_auto_season_input
+                    _wrap_with_session_management(import_auto_season_input)
                 ),
                 CallbackQueryHandler(  # Handle continue import callbacks
-                    handle_import_auto_callback,
+                    _wrap_with_session_management(handle_import_auto_callback),
                     pattern=r'{"action": "(continue_season_import|continue_episode_import|finish_import)".*}'
                 )
             ],
             5: [
                 MessageHandler(  # IMPORT_AUTO_EPISODE_INPUT = 5
                     filters.TEXT & ~filters.COMMAND,
-                    import_auto_episode_input
+                    _wrap_with_session_management(import_auto_episode_input)
                 ),
                 CallbackQueryHandler(  # Handle continue import callbacks
-                    handle_import_auto_callback,
+                    _wrap_with_session_management(handle_import_auto_callback),
                     pattern=r'{"action": "(continue_season_import|continue_episode_import|finish_import)".*}'
                 )
             ],
             6: [CallbackQueryHandler(  # IMPORT_AUTO_METHOD_SELECTION = 6
-                handle_import_auto_callback,
+                _wrap_with_session_management(handle_import_auto_callback),
                 pattern=r'{"action": "import_auto_method".*}'
             )],
         },
-        fallbacks=[CommandHandler("cancel", cancel)],
+        fallbacks=[CommandHandler("cancel", _wrap_with_session_management(cancel))],
         allow_reentry=True,  # 允许重新进入对话
-        per_message=False,  # 混合处理器类型时使用 False
+        # 使用默认的 per_* 设置以避免混合处理器类型的警告
+        per_chat=True,       # 每个聊天独立跟踪对话状态
+        per_user=True,       # 每个用户独立跟踪对话状态
     )
     application.add_handler(import_auto_handler)
     current_handlers["import_auto_handler"] = import_auto_handler
@@ -349,14 +400,14 @@ def _setup_handlers(application, handlers_module, callback_module):
 
     # 创建回调处理器
     import_callback_handler = CallbackQueryHandler(
-        handle_import_callback,
+        _wrap_with_session_management(handle_import_callback),
         pattern=r'{"action": "import_media".*}'
     )
     application.add_handler(import_callback_handler)
     current_handlers["import_callback_handler"] = import_callback_handler
 
     get_episode_callback_handler = CallbackQueryHandler(
-        handle_get_episode_callback,
+        _wrap_with_session_management(handle_get_episode_callback),
         pattern=r'{"(action|a)": "(get_media_episode|switch_episode_page|start_input_range)".*}'
     )
     application.add_handler(get_episode_callback_handler)
@@ -391,10 +442,14 @@ async def init_bot() -> Application:
     
     application = builder.build()
 
-    # 步骤3: 注册初始处理器
+    # 步骤3: 注册错误处理器
+    application.add_error_handler(error_handler)
+    logger.info("✅ Global error handler registered")
+    
+    # 步骤4: 注册初始处理器
     _setup_handlers(application, handlers, callback)
 
-    # 步骤4: 设置 Bot 命令菜单
+    # 步骤5: 设置 Bot 命令菜单
     await _setup_bot_commands(application)
 
     logger.info("✅ Initial bot handlers registered")
@@ -427,16 +482,65 @@ def start_file_observer(application: Application) -> Observer:
 # 4. 主程序入口（机器人启动+热更新服务）
 # ------------------------------
 if __name__ == "__main__":
+    import signal
+    
+    # 全局变量用于存储需要清理的资源
+    polling_manager = None
+    file_observer = None
+    application = None
+    
+    async def cleanup_resources(app):
+        """清理所有资源的异步函数"""
+        logger.info("🛑 开始清理资源...")
+        
+        # 停止轮询管理器
+        if polling_manager is not None:
+            try:
+                await polling_manager.stop_polling()
+                logger.info("📡 Dynamic polling stopped")
+            except Exception as e:
+                logger.error(f"❌ 停止动态轮询时出错: {e}")
+        
+        # 停止热重载服务
+        if file_observer is not None:
+            try:
+                file_observer.stop()
+                file_observer.join()
+                logger.info("🔍 Hot reload service stopped")
+            except Exception as e:
+                logger.error(f"❌ 停止热重载服务时出错: {e}")
+    
+    def signal_handler(signum, frame):
+        """信号处理器，用于优雅地停止应用程序"""
+        logger.info(f"\n🛑 Received signal {signum}, starting graceful shutdown...")
+        if application is not None:
+            application.stop_running()
+    
     try:
+        # 注册信号处理器
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
+        
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        application: Application = loop.run_until_complete(init_bot())
+        application = loop.run_until_complete(init_bot())
         logger.info("🚀 Bot application initialization complete")
-
-        # 检查是否启用热更新功能（开发环境启用，生产环境禁用）
-        enable_hot_reload = os.getenv('ENABLE_HOT_RELOAD', 'false').lower() == 'true'
-        file_observer = None
         
+        # 初始化动态轮询管理器
+        config_manager, _, _ = _import_modules()
+        # 创建轮询管理器（移除会话管理器依赖）
+        polling_manager = DynamicPollingManager(
+            application=application,
+            active_interval=config_manager.telegram.polling_interval_active,
+            idle_interval=config_manager.telegram.polling_interval_idle
+        )
+        
+        # 设置 post_shutdown 回调来清理资源
+        application.post_shutdown = cleanup_resources
+        
+        # 热重载功能（仅在开发环境启用）
+        enable_hot_reload = os.getenv('ENABLE_HOT_RELOAD', 'false').lower() == 'true'
+
         if enable_hot_reload:
             file_observer = start_file_observer(application)
             logger.info("🔍 Hot reload service started: changes to handlers/utils/config will take effect automatically")
@@ -445,23 +549,48 @@ if __name__ == "__main__":
 
         logger.info("📡 Bot has started listening for commands (press Ctrl+C to exit gracefully)")
         
-        # 直接运行轮询，这会自动处理初始化和事件循环
-        polling_interval = float(os.getenv('TELEGRAM_POLLING_INTERVAL', '10.0'))
-        loop.run_until_complete(application.run_polling(allowed_updates=Update.ALL_TYPES, poll_interval=polling_interval))
-
-    except KeyboardInterrupt:
-        logger.info("\n🛑 Received termination signal, starting graceful shutdown...")
-        if 'file_observer' in locals() and file_observer is not None:
-            file_observer.stop()
-            file_observer.join()
-            logger.info("🔍 Hot reload service stopped")
-        if 'application' in locals():
-            loop.run_until_complete(application.shutdown())
-            logger.info("🚀 Bot application shut down")
-        loop.close()
-        logger.info("✅ All services have exited normally")
-
+        # 启动动态轮询监控任务
+        loop.run_until_complete(polling_manager.start_monitoring())
+        
+        # 启动标准轮询，使用固定的短间隔以确保响应速度
+        # 动态延迟将在处理器层面实现
+        loop.run_until_complete(application.run_polling(
+            allowed_updates=None,
+            poll_interval=1.0  # 使用1秒固定间隔确保快速响应
+        ))
+        
     except Exception as e:
         logger.error(f"❌ Bot failed to start! Error: {str(e)}", exc_info=True)
-        if 'loop' in locals() and loop.is_running():
-            loop.close()
+        # 在异常情况下手动清理资源（仅在事件循环未关闭时）
+        if polling_manager is not None and not loop.is_closed():
+            try:
+                loop.run_until_complete(polling_manager.stop_polling())
+                logger.info("📡 Dynamic polling stopped (exception cleanup)")
+            except Exception as cleanup_error:
+                logger.error(f"❌ 异常清理时停止动态轮询出错: {cleanup_error}")
+        
+        if file_observer is not None:
+            try:
+                file_observer.stop()
+                file_observer.join()
+                logger.info("🔍 Hot reload service stopped (exception cleanup)")
+            except Exception as cleanup_error:
+                logger.error(f"❌ 异常清理时停止热重载服务出错: {cleanup_error}")
+    
+    finally:
+        # 最终清理阶段
+        if application is not None and not loop.is_closed():
+            try:
+                loop.run_until_complete(application.shutdown())
+                logger.info("🚀 Bot application shut down")
+            except Exception as e:
+                logger.error(f"❌ 关闭应用程序时出错: {e}")
+        
+        if 'loop' in locals() and not loop.is_closed():
+            try:
+                loop.close()
+                logger.info("✅ Event loop closed")
+            except Exception as e:
+                logger.error(f"❌ 关闭事件循环时出错: {e}")
+        
+        logger.info("✅ All services have exited normally")

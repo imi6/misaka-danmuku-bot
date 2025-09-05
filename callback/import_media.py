@@ -45,8 +45,8 @@ async def handle_import_callback(update: Update, context: ContextTypes.DEFAULT_T
         await query.answer("❌ 未找到历史搜索记录，请重新搜索", show_alert=True)
         return
 
-    # 3. 按钮加载状态提示
-    await query.answer("🔄 正在发起导入请求...", show_alert=False)
+    # 3. 按钮加载状态提示（已注释，根据用户要求不影响按钮展示）
+    # await query.answer("🔄 正在发起导入请求...", show_alert=False)
 
     # 4. 调用API执行direct_import
     api_result = call_danmaku_api(
@@ -261,7 +261,8 @@ async def handle_import_method_selection(update: Update, context: ContextTypes.D
 async def handle_get_episode_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     logger.info(f"📥 收到分集回调数据：{query.data}")
-    await query.answer("处理中...", show_alert=False)
+    # 加载状态提示（已注释，根据用户要求不影响按钮展示）
+    # await query.answer("处理中...", show_alert=False)
 
     try:
         # ------------------------------
@@ -325,12 +326,13 @@ async def handle_get_episode_callback(update: Update, context: ContextTypes.DEFA
                 await query.answer("❌ 无效参数，请重新获取分集", show_alert=True)
                 return ConversationHandler.END
 
-            # 临时更新按钮为加载状态（使用空回调避免长度问题）
-            try:
-                loading_keyboard = [[InlineKeyboardButton(text="⏳ 加载分集中...", callback_data="empty")]]
-                await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(loading_keyboard))
-            except BadRequest as e:
-                logger.warning(f"⚠️ 编辑加载按钮失败：{str(e)}")
+            # 用户要求：点击分集导入时不显示加载状态，保留原按钮状态
+            # 注释掉加载状态更新逻辑
+            # try:
+            #     loading_keyboard = [[InlineKeyboardButton(text="⏳ 加载分集中...", callback_data="empty")]]
+            #     await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(loading_keyboard))
+            # except BadRequest as e:
+            #     logger.warning(f"⚠️ 编辑加载按钮失败：{str(e)}")
 
             # 调用接口获取全量分集
             logger.info(f"🌐 调用API获取分集 - searchId: {search_id}, result_index: {result_index}")
@@ -356,10 +358,13 @@ async def handle_get_episode_callback(update: Update, context: ContextTypes.DEFA
                 if len(retry_callback) > CALLBACK_DATA_MAX_LEN:
                     retry_callback = json.dumps({"action": "get_media_episode", "data_id": "retry"}, ensure_ascii=False)
 
-                fail_keyboard = [[InlineKeyboardButton(
-                    text="🔄 重新获取分集",
-                    callback_data=retry_callback
-                )]]
+                # 保留原有的两个按钮
+                fail_keyboard = [
+                    [
+                        InlineKeyboardButton(text="🔗 立即导入", callback_data=json.dumps({"action": "import_media", "result_index": result_index}, ensure_ascii=False)),
+                        InlineKeyboardButton(text="📺 分集导入", callback_data=json.dumps({"action": "get_media_episode", "result_index": result_index}, ensure_ascii=False))
+                    ]
+                ]
                 await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(fail_keyboard))
                 await query.message.reply_text(f"❌ 分集获取失败：{error_msg}")
                 return ConversationHandler.END
@@ -379,10 +384,13 @@ async def handle_get_episode_callback(update: Update, context: ContextTypes.DEFA
                     "action": "get_media_episode",
                     "data_id": str(result_index)
                 }, ensure_ascii=False)
-                empty_keyboard = [[InlineKeyboardButton(
-                    text="🔄 重新获取分集",
-                    callback_data=retry_callback
-                )]]
+                # 保留原有的两个按钮
+                empty_keyboard = [
+                    [
+                        InlineKeyboardButton(text="🔗 立即导入", callback_data=json.dumps({"action": "import_media", "result_index": result_index}, ensure_ascii=False)),
+                        InlineKeyboardButton(text="📺 分集导入", callback_data=json.dumps({"action": "get_media_episode", "result_index": result_index}, ensure_ascii=False))
+                    ]
+                ]
                 await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(empty_keyboard))
                 return ConversationHandler.END
 
@@ -618,6 +626,14 @@ async def handle_get_episode_callback(update: Update, context: ContextTypes.DEFA
                 "action": "import_media",
                 "result_index": original_result_index
             }, ensure_ascii=False)
+            
+            # 分集导入按钮
+            episode_import_callback = json.dumps({
+                "action": "get_media_episode",
+                "result_index": original_result_index
+            }, ensure_ascii=False)
+            
+            # 添加立即导入按钮
             buttons.append([InlineKeyboardButton(text="🔗 立即导入全部", callback_data=import_callback)])
             
             full_message = f"""✅ 共找到 {total_episodes} 集有效分集 {page_info}
@@ -644,10 +660,13 @@ async def handle_get_episode_callback(update: Update, context: ContextTypes.DEFA
         if "data_id" in locals():
             try:
                 retry_callback = json.dumps({"action": "get_media_episode", "data_id": data_id[:6]}, ensure_ascii=False)
-                error_keyboard = [[InlineKeyboardButton(
-                    text="🔄 重新获取分集",
-                    callback_data=retry_callback
-                )]]
+                # 保留原有的两个按钮
+                error_keyboard = [
+                    [
+                        InlineKeyboardButton(text="🔗 立即导入", callback_data=json.dumps({"action": "import_media", "data_id": data_id}, ensure_ascii=False)),
+                        InlineKeyboardButton(text="📺 分集导入", callback_data=json.dumps({"action": "get_media_episode", "data_id": data_id}, ensure_ascii=False))
+                    ]
+                ]
                 await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(error_keyboard))
             except Exception:
                 pass
@@ -657,10 +676,13 @@ async def handle_get_episode_callback(update: Update, context: ContextTypes.DEFA
         if "data_id" in locals():
             try:
                 retry_callback = json.dumps({"action": "get_media_episode", "data_id": data_id[:6]}, ensure_ascii=False)
-                error_keyboard = [[InlineKeyboardButton(
-                    text="🔄 重新获取分集",
-                    callback_data=retry_callback
-                )]]
+                # 保留原有的两个按钮
+                error_keyboard = [
+                    [
+                        InlineKeyboardButton(text="🔗 立即导入", callback_data=json.dumps({"action": "import_media", "data_id": data_id}, ensure_ascii=False)),
+                        InlineKeyboardButton(text="📺 分集导入", callback_data=json.dumps({"action": "get_media_episode", "data_id": data_id}, ensure_ascii=False))
+                    ]
+                ]
                 await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(error_keyboard))
             except Exception:
                 pass
