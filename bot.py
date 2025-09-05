@@ -466,11 +466,14 @@ async def init_bot() -> Application:
     # 步骤2: 创建 Telegram 机器人应用
     builder = ApplicationBuilder().token(config_manager.telegram.bot_token)
     
-    # 配置连接超时（增加超时时间以应对网络延迟）
-    builder = builder.connect_timeout(config_manager.app.api_timeout).read_timeout(config_manager.app.api_timeout).write_timeout(config_manager.app.api_timeout)
+    # 配置连接超时（使用Telegram专用配置）
+    builder = builder.connect_timeout(config_manager.telegram.connect_timeout).read_timeout(config_manager.telegram.read_timeout).write_timeout(config_manager.telegram.read_timeout)
     
-    # 配置连接池（解决连接池占满的问题）
-    builder = builder.pool_timeout(config_manager.app.api_timeout).connection_pool_size(8)
+    # 配置连接池（使用配置文件中的值，解决连接池占满的问题）
+    builder = builder.pool_timeout(config_manager.telegram.pool_timeout).connection_pool_size(config_manager.telegram.connection_pool_size)
+    
+    # 配置网络重试机制和getUpdates专用连接池
+    builder = builder.get_updates_connect_timeout(config_manager.telegram.connect_timeout).get_updates_read_timeout(config_manager.telegram.read_timeout).get_updates_pool_timeout(config_manager.telegram.pool_timeout).get_updates_connection_pool_size(config_manager.telegram.connection_pool_size)
     
     # 配置代理（基于Docker环境变量）
     if config_manager.proxy and config_manager.proxy.enabled:
