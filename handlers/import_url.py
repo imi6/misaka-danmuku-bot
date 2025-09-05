@@ -11,57 +11,57 @@ logger = logging.getLogger(__name__)
 # 对话状态
 URL_INPUT, KEYWORD_INPUT, ANIME_SELECT, SOURCE_SELECT, EPISODE_INPUT = range(5)
 
-async def check_url_accessibility(url: str) -> tuple[bool, str, str]:
-    """检查URL是否可访问并解析标题
+async def check_url_accessibility(url: str) -> tuple[bool, str, dict]:
+    """检查URL是否可访问并解析详细信息
     
     Returns:
-        tuple[bool, str, str]: (是否可访问, 错误信息或状态描述, 页面标题)
+        tuple[bool, str, dict]: (是否可访问, 错误信息或状态描述, 页面详细信息)
     """
     try:
         # 发送HEAD请求检查URL可访问性
         response = requests.head(url, timeout=10, allow_redirects=True)
         
         if response.status_code == 200:
-            # HEAD请求成功，尝试获取页面内容解析标题（失败不影响主流程）
-            title = ""
+            # HEAD请求成功，尝试获取页面内容解析详细信息（失败不影响主流程）
+            page_info = {'page_title': '', 'episode_title': '', 'original_title': ''}
             try:
                 content_response = requests.get(url, timeout=15, headers={
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
                 })
                 if content_response.status_code == 200:
-                    title = extract_title_from_html(content_response.text)
+                    page_info = extract_detailed_info_from_html(content_response.text)
             except Exception:
-                # 标题解析失败，但不影响URL可访问性判断
+                # 信息解析失败，但不影响URL可访问性判断
                 pass
-            return True, "URL可访问", title
+            return True, "URL可访问", page_info
                 
         elif response.status_code == 405:  # Method Not Allowed，尝试GET请求
             response = requests.get(url, timeout=15, headers={
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             })
             if response.status_code == 200:
-                title = ""
+                page_info = {'page_title': '', 'episode_title': '', 'original_title': ''}
                 try:
-                    title = extract_title_from_html(response.text)
+                    page_info = extract_detailed_info_from_html(response.text)
                 except Exception:
-                    # 标题解析失败，但不影响URL可访问性判断
+                    # 信息解析失败，但不影响URL可访问性判断
                     pass
-                return True, "URL可访问", title
+                return True, "URL可访问", page_info
             else:
-                return False, f"HTTP {response.status_code}: {response.reason}", ""
+                return False, f"HTTP {response.status_code}: {response.reason}", {'page_title': '', 'episode_title': '', 'original_title': ''}
         else:
-            return False, f"HTTP {response.status_code}: {response.reason}", ""
+            return False, f"HTTP {response.status_code}: {response.reason}", {'page_title': '', 'episode_title': '', 'original_title': ''}
             
     except requests.exceptions.Timeout:
-        return False, "请求超时，URL可能无法访问", ""
+        return False, "请求超时，URL可能无法访问", {'page_title': '', 'episode_title': '', 'original_title': ''}
     except requests.exceptions.ConnectionError:
-        return False, "连接失败，URL无法访问", ""
+        return False, "连接失败，URL无法访问", {'page_title': '', 'episode_title': '', 'original_title': ''}
     except requests.exceptions.InvalidURL:
-        return False, "无效的URL格式", ""
+        return False, "无效的URL格式", {'page_title': '', 'episode_title': '', 'original_title': ''}
     except requests.exceptions.TooManyRedirects:
-        return False, "重定向次数过多", ""
+        return False, "重定向次数过多", {'page_title': '', 'episode_title': '', 'original_title': ''}
     except Exception as e:
-        return False, f"检查失败: {str(e)[:50]}", ""
+        return False, f"检查失败: {str(e)[:50]}", {'page_title': '', 'episode_title': '', 'original_title': ''}
 
 def extract_title_from_html(html_content: str) -> str:
     """从HTML内容中提取标题
@@ -89,6 +89,82 @@ def extract_title_from_html(html_content: str) -> str:
         return ""
     except Exception:
         return ""
+
+
+def extract_detailed_info_from_html(html_content: str) -> dict:
+    """从HTML内容中提取详细信息，包括标题和可能的集标题
+    
+    Args:
+        html_content: HTML页面内容
+        
+    Returns:
+        dict: 包含页面标题和集标题的字典
+    """
+    result = {
+        'page_title': '',
+        'episode_title': '',
+        'original_title': ''
+    }
+    
+    try:
+        soup = BeautifulSoup(html_content, 'html.parser')
+        
+        # 获取原始title标签内容
+        title_tag = soup.find('title')
+        if title_tag and title_tag.string:
+            original_title = title_tag.string.strip()
+            result['original_title'] = original_title
+            
+            # 提取集标题信息
+            episode_title = extract_episode_title(original_title)
+            result['episode_title'] = episode_title
+            
+            # 清理后的页面标题
+            cleaned_title = clean_page_title(original_title)
+            result['page_title'] = cleaned_title
+        
+        # 节目标题提取功能已删除，仅保留集标题解析
+    
+    except Exception as e:
+        logger.debug(f"提取页面信息时出错: {e}")
+    
+    return result
+
+def extract_episode_title(title: str) -> str:
+    """从页面标题中提取集标题信息
+    
+    Args:
+        title: 原始页面标题
+        
+    Returns:
+        str: 集标题，如果无法提取则返回空字符串
+    """
+    import re
+    
+    # 常见的集数标题模式
+    episode_patterns = [
+        # 匹配 "第X集" 或 "第X话" 后面的内容
+        r'第\d+[集话]\s*[：:：]?\s*([^\|\-_]+)',
+        # 匹配 "EP.X" 或 "Episode X" 后面的内容
+        r'(?:EP\.?|Episode)\s*\d+\s*[：:：]?\s*([^\|\-_]+)',
+        # 匹配数字后面跟着标题的模式
+        r'\d+\s*[：:：]\s*([^\|\-_]+)',
+        # 匹配括号中的集标题
+        r'\(([^\)]+)\)',
+        # 匹配引号中的集标题
+        r'[""\']([^""\'])+[""\']'
+    ]
+    
+    for pattern in episode_patterns:
+        match = re.search(pattern, title)
+        if match:
+            episode_title = match.group(1).strip()
+            # 过滤掉一些无意义的内容
+            if len(episode_title) > 2 and not any(keyword in episode_title for keyword in 
+                ['在线观看', '高清', '免费', '视频', '网站', 'bilibili', '腾讯', '爱奇艺', '优酷']):
+                return episode_title
+    
+    return ""
 
 def clean_page_title(title: str) -> str:
     """清理页面标题，去除网站名称和冗余信息
@@ -160,64 +236,7 @@ def clean_page_title(title: str) -> str:
     
     return cleaned_title.strip()
 
-# 重试命令处理器
-async def retry_current_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """重试当前步骤"""
-    current_state = context.user_data.get('current_state')
-    
-    if current_state == URL_INPUT:
-        await update.message.reply_text(
-            "🔗 URL导入功能\n\n"
-            "请发送要导入的视频URL："
-        )
-        return URL_INPUT
-    elif current_state == KEYWORD_INPUT:
-        await update.message.reply_text(
-            "请输入关键词来搜索影视库："
-        )
-        return KEYWORD_INPUT
-    elif current_state == ANIME_SELECT:
-        matches = context.user_data.get('anime_matches', [])
-        if matches:
-            return await show_video_selection(update, context, matches)
-        else:
-            await update.message.reply_text(
-                "❌ 没有找到之前的搜索结果，请重新输入关键词："
-            )
-            return KEYWORD_INPUT
-    elif current_state == SOURCE_SELECT:
-        anime = context.user_data.get('selected_anime')
-        if anime:
-            return await show_video_sources(update, context, anime)
-        else:
-            await update.message.reply_text(
-                "❌ 没有找到选中的影视，请重新选择："
-            )
-            matches = context.user_data.get('anime_matches', [])
-            if matches:
-                return await show_video_selection(update, context, matches)
-            else:
-                return KEYWORD_INPUT
-    elif current_state == EPISODE_INPUT:
-        anime = context.user_data.get('selected_anime')
-        source = context.user_data.get('selected_source')
-        if anime and source:
-            return await request_episode_input(update, context, anime, source)
-        else:
-            await update.message.reply_text(
-                "❌ 缺少必要信息，请重新选择源："
-            )
-            if anime:
-                return await show_video_sources(update, context, anime)
-            else:
-                return KEYWORD_INPUT
-    else:
-        # 默认回到开始
-        await update.message.reply_text(
-            "🔗 URL导入功能\n\n"
-            "请发送要导入的视频URL："
-        )
-        return URL_INPUT
+
 
 # 库缓存
 library_cache = {
@@ -273,6 +292,111 @@ def search_video_by_keyword(library_data, keyword):
     
     return matches
 
+def is_movie_source(anime):
+    """检测影视是否为电影类型
+    
+    Args:
+        anime: 影视信息字典
+        
+    Returns:
+        bool: 如果是电影类型返回True，否则返回False
+    """
+    # 直接检查type字段
+    anime_type = anime.get('type', '').lower()
+    if anime_type == 'movie':
+        return True
+    
+    # 兼容中文类型
+    if anime_type == '电影':
+        return True
+    
+    return False
+
+async def auto_import_movie(update: Update, context: ContextTypes.DEFAULT_TYPE, anime, source):
+    """自动导入电影（使用第1集）
+    
+    Args:
+        update: Telegram更新对象
+        context: 上下文对象
+        anime: 选中的影视信息
+        source: 选中的源信息
+        
+    Returns:
+        int: ConversationHandler.END
+    """
+    # 获取所有必要的参数
+    url = context.user_data.get('import_url')
+    source_id = source.get('sourceId') or source.get('id')
+    
+    if not all([url, source_id]):
+        await update.message.reply_text(
+            "❌ 缺少必要参数，请重新开始导入流程"
+        )
+        return EPISODE_INPUT
+    
+    # 准备API请求参数（电影默认使用第1集）
+    episode_index = 1
+    import_data = {
+        'sourceId': source_id,
+        'episode_index': episode_index,
+        'url': url
+    }
+    
+    # 添加页面信息参数
+    page_info = context.user_data.get('page_info', {})
+    page_title = page_info.get('page_title', '').strip()
+    episode_title = page_info.get('episode_title', '').strip()
+    
+    if page_title:
+        import_data['title'] = page_title
+    
+    if episode_title:  # 添加集标题参数
+        import_data['episode_title'] = episode_title
+    
+    # 添加节目名称参数
+    anime_name = anime.get('title', '')
+    if anime_name:
+        import_data['anime_name'] = anime_name
+    
+    # 显示导入信息
+    anime_title = anime.get('title', '未知影视')
+    source_name = source.get('providerName', '未知源')
+    
+    await update.message.reply_text(
+        f"🎬 检测到电影类型，自动使用第1集进行导入\n\n"
+        f"🚀 开始导入...\n\n"
+        f"📺 影视: {anime_title}\n"
+        f"🎬 源: {source_name}\n"
+        f"📊 集数: 第{episode_index}集（电影）\n"
+        f"🔗 URL: {url}"
+    )
+    
+    # 调用导入API
+    try:
+        response = call_danmaku_api('POST', '/import/url', None, import_data)
+        
+        if response and response.get('success'):
+            await update.message.reply_text(
+                "✅ 电影导入成功！\n\n"
+                "导入任务已提交，请稍后查看处理结果。"
+            )
+        else:
+            error_msg = response.get('message', '未知错误') if response else '请求失败'
+            await update.message.reply_text(
+                f"❌ 导入失败: {error_msg}"
+            )
+            return EPISODE_INPUT
+    except Exception as e:
+        logger.error(f"调用导入API异常: {e}")
+        await update.message.reply_text(
+            "❌ 导入时发生错误，请稍后重试"
+        )
+        return EPISODE_INPUT
+    
+    # 清理用户数据
+    context.user_data.clear()
+    return ConversationHandler.END
+
 @check_user_permission
 async def import_url_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """开始URL导入流程"""
@@ -288,23 +412,51 @@ async def import_url_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # 简单的URL验证
         if url.startswith('http://') or url.startswith('https://'):
-            # 检查URL可访问性并解析标题
-            await update.message.reply_text("🔍 正在检查URL可访问性并解析页面标题...")
+            # 检查URL可访问性并解析页面信息
+            await update.message.reply_text("🔍 正在检查URL可访问性并解析页面信息...")
             
-            is_accessible, status_msg, page_title = await check_url_accessibility(url)
+            is_accessible, status_msg, page_info = await check_url_accessibility(url)
             
             if is_accessible:
                 # URL可访问，继续流程
                 context.user_data['import_url'] = url
-                context.user_data['page_title'] = page_title
-                context.user_data['current_state'] = KEYWORD_INPUT
+                context.user_data['page_info'] = page_info
                 
-                title_info = f"\n📄 页面标题: {page_title}" if page_title else ""
-                await update.message.reply_text(
-                    f"✅ URL验证成功: {url}{title_info}\n\n"
-                    "请输入关键词来搜索影视库：\n\n"
-                    "💡 发送 /retry 重新执行当前步骤"
-                )
+                # 如果有页面标题，尝试自动匹配影视库
+                page_title = page_info.get('page_title', '')
+                if page_title:
+                    await update.message.reply_text(f"✅ URL验证成功: {url}\n📄 页面标题: {page_title}\n\n🔍 正在尝试自动匹配影视库...")
+                    
+                    # 获取库数据
+                    library_data = await get_library_data()
+                    if library_data:
+                        # 使用页面标题搜索匹配的影视
+                        matches = search_video_by_keyword(library_data, page_title)
+                        
+                        if matches:
+                            if len(matches) == 1:
+                                # 只有一个匹配结果，直接进入源选择
+                                video = matches[0]
+                                context.user_data['selected_anime'] = video
+                                context.user_data['current_state'] = SOURCE_SELECT
+                                await update.message.reply_text(f"🎯 自动匹配成功: {video.get('title', '未知标题')}")
+                                return await show_video_sources(update, context, video)
+                            else:
+                                # 多个匹配结果，让用户选择
+                                context.user_data['anime_matches'] = matches
+                                context.user_data['current_state'] = ANIME_SELECT
+                                await update.message.reply_text(f"🎯 找到 {len(matches)} 个可能的匹配结果")
+                                return await show_video_selection(update, context, matches)
+                        
+                        # 自动匹配失败，进入手动输入流程
+                        await update.message.reply_text(f"⚠️ 未能自动匹配到影视，请手动输入关键词搜索：")
+                    else:
+                        await update.message.reply_text(f"⚠️ 无法获取影视库数据，请手动输入关键词搜索：")
+                else:
+                    # 没有页面标题，直接进入手动输入流程
+                    await update.message.reply_text(f"✅ URL验证成功: {url}\n\n请输入关键词来搜索影视库：")
+                
+                context.user_data['current_state'] = KEYWORD_INPUT
                 return KEYWORD_INPUT
             else:
                 # URL不可访问
@@ -326,8 +478,7 @@ async def import_url_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🔗 URL导入功能\n\n"
         "请发送要导入的视频URL：\n\n"
         "💡 提示：\n"
-        "• 可以直接使用：/url https://example.com/video\n"
-        "• 或者在任何步骤中发送 /retry 重新执行当前步骤"
+        "• 可以直接使用：/url https://example.com/video"
     )
     return URL_INPUT
 
@@ -338,36 +489,62 @@ async def handle_url_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 简单的URL验证
     if not (url.startswith('http://') or url.startswith('https://')):
         await update.message.reply_text(
-            "❌ 请输入有效的URL（以http://或https://开头）\n\n"
-            "💡 发送 /retry 重新输入URL"
+            "❌ 请输入有效的URL（以http://或https://开头）"
         )
         return URL_INPUT
     
-    # 检查URL可访问性并解析标题
-    await update.message.reply_text("🔍 正在检查URL可访问性并解析页面标题...")
+    # 检查URL可访问性并解析页面信息
+    await update.message.reply_text("🔍 正在检查URL可访问性并解析页面信息...")
     
-    is_accessible, status_msg, page_title = await check_url_accessibility(url)
+    is_accessible, status_msg, page_info = await check_url_accessibility(url)
     
     if is_accessible:
         # URL可访问，继续流程
         context.user_data['import_url'] = url
-        context.user_data['page_title'] = page_title
-        context.user_data['current_state'] = KEYWORD_INPUT
+        context.user_data['page_info'] = page_info
         
-        title_info = f"\n📄 页面标题: {page_title}" if page_title else ""
-        await update.message.reply_text(
-            f"✅ URL验证成功: {url}{title_info}\n\n"
-            "请输入关键词来搜索影视库：\n\n"
-            "💡 发送 /retry 重新执行当前步骤"
-        )
+        # 如果有页面标题，尝试自动匹配影视库
+        page_title = page_info.get('page_title', '')
+        if page_title:
+            await update.message.reply_text(f"✅ URL验证成功: {url}\n📄 页面标题: {page_title}\n\n🔍 正在尝试自动匹配影视库...")
+            
+            # 获取库数据
+            library_data = await get_library_data()
+            if library_data:
+                # 使用页面标题搜索匹配的影视
+                matches = search_video_by_keyword(library_data, page_title)
+                
+                if matches:
+                    if len(matches) == 1:
+                        # 只有一个匹配结果，直接进入源选择
+                        video = matches[0]
+                        context.user_data['selected_anime'] = video
+                        context.user_data['current_state'] = SOURCE_SELECT
+                        await update.message.reply_text(f"🎯 自动匹配成功: {video.get('title', '未知标题')}")
+                        return await show_video_sources(update, context, video)
+                    else:
+                        # 多个匹配结果，让用户选择
+                        context.user_data['anime_matches'] = matches
+                        context.user_data['current_state'] = ANIME_SELECT
+                        await update.message.reply_text(f"🎯 找到 {len(matches)} 个可能的匹配结果")
+                        return await show_video_selection(update, context, matches)
+                
+                # 自动匹配失败，进入手动输入流程
+                await update.message.reply_text(f"⚠️ 未能自动匹配到影视，请手动输入关键词搜索：")
+            else:
+                await update.message.reply_text(f"⚠️ 无法获取影视库数据，请手动输入关键词搜索：")
+        else:
+            # 没有页面标题，直接进入手动输入流程
+            await update.message.reply_text(f"✅ URL验证成功: {url}\n\n请输入关键词来搜索影视库：")
+        
+        context.user_data['current_state'] = KEYWORD_INPUT
         return KEYWORD_INPUT
     else:
         # URL不可访问
         await update.message.reply_text(
             f"❌ URL无法访问: {url}\n\n"
             f"错误信息: {status_msg}\n\n"
-            "请检查URL是否正确或稍后重试：\n\n"
-            "💡 发送 /retry 重新输入URL"
+            "请检查URL是否正确或稍后重试："
         )
         return URL_INPUT
 
@@ -377,8 +554,7 @@ async def handle_keyword_input(update: Update, context: ContextTypes.DEFAULT_TYP
     
     if not keyword:
         await update.message.reply_text(
-            "❌ 请输入有效的关键词\n\n"
-            "💡 发送 /retry 重新执行当前步骤"
+            "❌ 请输入有效的关键词"
         )
         return KEYWORD_INPUT
     
@@ -386,8 +562,7 @@ async def handle_keyword_input(update: Update, context: ContextTypes.DEFAULT_TYP
     library_data = await get_library_data()
     if not library_data:
         await update.message.reply_text(
-            "❌ 无法获取影视库数据，请稍后重试\n\n"
-            "💡 发送 /retry 重新执行当前步骤"
+            "❌ 无法获取影视库数据，请稍后重试"
         )
         return KEYWORD_INPUT
     
@@ -397,8 +572,7 @@ async def handle_keyword_input(update: Update, context: ContextTypes.DEFAULT_TYP
     if not matches:
         await update.message.reply_text(
             f"❌ 未找到包含关键词 '{keyword}' 的影视\n\n"
-            "请重新输入关键词：\n\n"
-            "💡 发送 /retry 重新执行当前步骤"
+            "请重新输入关键词："
         )
         return KEYWORD_INPUT
     
@@ -436,7 +610,7 @@ async def show_video_selection(update: Update, context: ContextTypes.DEFAULT_TYP
         
         message += f"{i}. {info}\n"
     
-    message += "\n请输入序号选择影视：\n\n💡 发送 /retry 重新执行当前步骤"
+    message += "\n请输入序号选择影视："
     
     await update.message.reply_text(message)
     return ANIME_SELECT
@@ -454,14 +628,12 @@ async def handle_video_selection(update: Update, context: ContextTypes.DEFAULT_T
             return await show_video_sources(update, context, selected_anime)
         else:
             await update.message.reply_text(
-                f"❌ 请输入有效的序号 (1-{len(matches)})\n\n"
-                "💡 发送 /retry 重新执行当前步骤"
+                f"❌ 请输入有效的序号 (1-{len(matches)})"
             )
             return ANIME_SELECT
     except ValueError:
         await update.message.reply_text(
-            "❌ 请输入数字序号\n\n"
-            "💡 发送 /retry 重新执行当前步骤"
+            "❌ 请输入数字序号"
         )
         return ANIME_SELECT
 
@@ -475,8 +647,7 @@ async def show_video_sources(update: Update, context: ContextTypes.DEFAULT_TYPE,
         
         if not response or not response.get('success'):
             await update.message.reply_text(
-                "❌ 获取影视源失败，请稍后重试\n\n"
-                "💡 发送 /retry 重新执行当前步骤"
+                "❌ 获取影视源失败，请稍后重试"
             )
             return SOURCE_SELECT
         
@@ -484,8 +655,7 @@ async def show_video_sources(update: Update, context: ContextTypes.DEFAULT_TYPE,
         
         if not sources:
             await update.message.reply_text(
-                "❌ 该影视暂无可用源\n\n"
-                "💡 发送 /retry 重新执行当前步骤"
+                "❌ 该影视暂无可用源"
             )
             return SOURCE_SELECT
         
@@ -496,8 +666,16 @@ async def show_video_sources(update: Update, context: ContextTypes.DEFAULT_TYPE,
             # 只有一个源，直接选择
             source = sources[0]
             context.user_data['selected_source'] = source
-            context.user_data['current_state'] = EPISODE_INPUT
-            return await request_episode_input(update, context, anime, source)
+            
+            # 检测是否为电影类型
+            if is_movie_source(anime):
+                # 电影类型，直接使用第1集进行导入
+                context.user_data['current_state'] = EPISODE_INPUT
+                return await auto_import_movie(update, context, anime, source)
+            else:
+                # 非电影类型，正常进入集数输入
+                context.user_data['current_state'] = EPISODE_INPUT
+                return await request_episode_input(update, context, anime, source)
         else:
             # 多个源，让用户选择
             return await show_source_selection(update, context, anime, sources)
@@ -505,8 +683,7 @@ async def show_video_sources(update: Update, context: ContextTypes.DEFAULT_TYPE,
     except Exception as e:
         logger.error(f"获取影视源异常: {e}")
         await update.message.reply_text(
-            "❌ 获取影视源时发生错误，请稍后重试\n\n"
-            "💡 发送 /retry 重新执行当前步骤"
+            "❌ 获取影视源时发生错误，请稍后重试"
         )
         return SOURCE_SELECT
 
@@ -525,7 +702,7 @@ async def show_source_selection(update: Update, context: ContextTypes.DEFAULT_TY
         
         message += f"{i}. {info}\n"
     
-    message += "\n请输入序号选择源：\n\n💡 发送 /retry 重新执行当前步骤"
+    message += "\n请输入序号选择源："
     
     await update.message.reply_text(message)
     return SOURCE_SELECT
@@ -542,17 +719,22 @@ async def handle_source_selection(update: Update, context: ContextTypes.DEFAULT_
             context.user_data['current_state'] = EPISODE_INPUT
             
             anime = context.user_data.get('selected_anime')
-            return await request_episode_input(update, context, anime, selected_source)
+            
+            # 检测是否为电影类型
+            if is_movie_source(anime):
+                # 电影类型，直接使用第1集进行导入
+                return await auto_import_movie(update, context, anime, selected_source)
+            else:
+                # 非电影类型，正常进入集数输入
+                return await request_episode_input(update, context, anime, selected_source)
         else:
             await update.message.reply_text(
-                f"❌ 请输入有效的序号 (1-{len(sources)})\n\n"
-                "💡 发送 /retry 重新执行当前步骤"
+                f"❌ 请输入有效的序号 (1-{len(sources)})"
             )
             return SOURCE_SELECT
     except ValueError:
         await update.message.reply_text(
-            "❌ 请输入数字序号\n\n"
-            "💡 发送 /retry 重新执行当前步骤"
+            "❌ 请输入数字序号"
         )
         return SOURCE_SELECT
 
@@ -567,7 +749,7 @@ async def request_episode_input(update: Update, context: ContextTypes.DEFAULT_TY
     if episode_count > 0:
         message += f"该源共有 {episode_count} 集\n\n"
     
-    message += "请输入要导入的集数：\n\n💡 发送 /retry 重新执行当前步骤"
+    message += "请输入要导入的集数："
     
     await update.message.reply_text(message)
     return EPISODE_INPUT
@@ -579,8 +761,7 @@ async def handle_episode_input(update: Update, context: ContextTypes.DEFAULT_TYP
         
         if episode_index < 1:
             await update.message.reply_text(
-                "❌ 集数必须大于0\n\n"
-                "💡 发送 /retry 重新执行当前步骤"
+                "❌ 集数必须大于0"
             )
             return EPISODE_INPUT
         
@@ -593,8 +774,7 @@ async def handle_episode_input(update: Update, context: ContextTypes.DEFAULT_TYP
         
         if not all([url, source_id]):
             await update.message.reply_text(
-                "❌ 缺少必要参数，请重新开始导入流程\n\n"
-                "💡 发送 /retry 重新执行当前步骤"
+                "❌ 缺少必要参数，请重新开始导入流程"
             )
             return EPISODE_INPUT
         
@@ -605,10 +785,21 @@ async def handle_episode_input(update: Update, context: ContextTypes.DEFAULT_TYP
             'url': url
         }
         
-        # 添加页面标题参数（如果成功解析到标题的话）
-        page_title = context.user_data.get('page_title', '').strip()
+        # 添加页面信息参数
+        page_info = context.user_data.get('page_info', {})
+        page_title = page_info.get('page_title', '').strip()
+        episode_title = page_info.get('episode_title', '').strip()
+        
         if page_title:  # 只有当标题不为空时才添加到API参数中
             import_data['title'] = page_title
+        
+        if episode_title:  # 添加集标题参数
+            import_data['episode_title'] = episode_title
+        
+        # 添加节目名称参数
+        anime_name = anime.get('title', '')
+        if anime_name:
+            import_data['anime_name'] = anime_name
         
         # 显示导入信息
         anime_title = anime.get('title', '未知影视')
@@ -634,15 +825,13 @@ async def handle_episode_input(update: Update, context: ContextTypes.DEFAULT_TYP
             else:
                 error_msg = response.get('message', '未知错误') if response else '请求失败'
                 await update.message.reply_text(
-                    f"❌ 导入失败: {error_msg}\n\n"
-                    "💡 发送 /retry 重新执行当前步骤"
+                    f"❌ 导入失败: {error_msg}"
                 )
                 return EPISODE_INPUT
         except Exception as e:
             logger.error(f"调用导入API异常: {e}")
             await update.message.reply_text(
-                "❌ 导入时发生错误，请稍后重试\n\n"
-                "💡 发送 /retry 重新执行当前步骤"
+                "❌ 导入时发生错误，请稍后重试"
             )
             return EPISODE_INPUT
         
@@ -652,8 +841,7 @@ async def handle_episode_input(update: Update, context: ContextTypes.DEFAULT_TYP
         
     except ValueError:
         await update.message.reply_text(
-            "❌ 请输入有效的数字\n\n"
-            "💡 发送 /retry 重新执行当前步骤"
+            "❌ 请输入有效的数字"
         )
         return EPISODE_INPUT
 
@@ -677,23 +865,18 @@ def create_import_url_handler():
         ],
         states={
             URL_INPUT: [
-                CommandHandler('retry', retry_current_step),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_url_input),
             ],
             KEYWORD_INPUT: [
-                CommandHandler('retry', retry_current_step),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_keyword_input),
             ],
             ANIME_SELECT: [
-                CommandHandler('retry', retry_current_step),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_video_selection),
             ],
             SOURCE_SELECT: [
-                CommandHandler('retry', retry_current_step),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_source_selection),
             ],
             EPISODE_INPUT: [
-                CommandHandler('retry', retry_current_step),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_episode_input),
             ],
         },

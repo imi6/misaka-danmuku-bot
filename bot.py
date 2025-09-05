@@ -589,7 +589,13 @@ if __name__ == "__main__":
         application.post_shutdown = cleanup_resources
         
         # 热重载功能（仅在开发环境启用）
-        enable_hot_reload = os.getenv('ENABLE_HOT_RELOAD', 'false').lower() == 'true'
+        # 优先使用 ENABLE_HOT_RELOAD 环境变量，如果未设置则根据 ENVIRONMENT 自动判断
+        enable_hot_reload_env = os.getenv('ENABLE_HOT_RELOAD', '').lower()
+        if enable_hot_reload_env in ['true', 'false']:
+            enable_hot_reload = enable_hot_reload_env == 'true'
+        else:
+            # 根据环境配置自动启用热更新
+            enable_hot_reload = config_manager.app.environment.lower() in ['dev', 'development', 'debug']
 
         if enable_hot_reload:
             file_observer = start_file_observer(application)
