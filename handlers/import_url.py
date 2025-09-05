@@ -5,6 +5,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, MessageHandler, filters
 from utils.api import call_danmaku_api
 from utils.permission import check_user_permission
+from .show_title_extractor import extract_show_title_from_h1
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +104,8 @@ def extract_detailed_info_from_html(html_content: str) -> dict:
     result = {
         'page_title': '',
         'episode_title': '',
-        'original_title': ''
+        'original_title': '',
+        'show_title': ''
     }
     
     try:
@@ -123,7 +125,9 @@ def extract_detailed_info_from_html(html_content: str) -> dict:
             cleaned_title = clean_page_title(original_title)
             result['page_title'] = cleaned_title
         
-        # 节目标题提取功能已删除，仅保留集标题解析
+        # 使用h1标签提取节目标题
+        show_title = extract_show_title_from_h1(soup)
+        result['show_title'] = show_title
     
     except Exception as e:
         logger.debug(f"提取页面信息时出错: {e}")
@@ -281,14 +285,24 @@ async def init_library_cache():
     return data
 
 def search_video_by_keyword(library_data, keyword):
-    """根据关键词搜索影视"""
+    """根据关键词搜索影视，支持双向匹配和智能匹配"""
     keyword = keyword.lower().strip()
     matches = []
+    exact_matches = []  # 精确匹配结果
+    partial_matches = []  # 部分匹配结果
     
     for anime in library_data:
         title = anime.get('title', '').lower()
-        if keyword in title:
-            matches.append(anime)
+        
+        # 精确匹配（完全相等）
+        if keyword == title:
+            exact_matches.append(anime)
+        # 双向包含匹配：关键词包含标题 或 标题包含关键词
+        elif keyword in title or title in keyword:
+            partial_matches.append(anime)
+    
+    # 优先返回精确匹配，然后是部分匹配
+    matches = exact_matches + partial_matches
     
     return matches
 
@@ -346,6 +360,7 @@ async def auto_import_movie(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     page_info = context.user_data.get('page_info', {})
     page_title = page_info.get('page_title', '').strip()
     episode_title = page_info.get('episode_title', '').strip()
+    show_title = page_info.get('show_title', '').strip()
     
     if page_title:
         import_data['title'] = page_title
@@ -353,8 +368,8 @@ async def auto_import_movie(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     if episode_title:  # 添加集标题参数
         import_data['episode_title'] = episode_title
     
-    # 添加节目名称参数
-    anime_name = anime.get('title', '')
+    # 添加节目名称参数（优先使用从h1提取的节目标题）
+    anime_name = show_title or anime.get('title', '')
     if anime_name:
         import_data['anime_name'] = anime_name
     
@@ -422,16 +437,22 @@ async def import_url_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 context.user_data['import_url'] = url
                 context.user_data['page_info'] = page_info
                 
-                # 如果有页面标题，尝试自动匹配影视库
-                page_title = page_info.get('page_title', '')
-                if page_title:
-                    await update.message.reply_text(f"✅ URL验证成功: {url}\n📄 页面标题: {page_title}\n\n🔍 正在尝试自动匹配影视库...")
+                # 优先使用h1节目标题，如果没有则使用页面标题进行匹配
+                show_title = page_info.get('show_title', '').strip()
+                page_title = page_info.get('page_title', '').strip()
+                
+                # 选择最佳匹配关键词：优先使用h1节目标题
+                match_keyword = show_title if show_title else page_title
+                
+                if match_keyword:
+                    title_type = "节目标题" if show_title else "页面标题"
+                    await update.message.reply_text(f"✅ URL验证成功: {url}\n📄 {title_type}: {match_keyword}\n\n🔍 正在尝试自动匹配影视库...")
                     
                     # 获取库数据
                     library_data = await get_library_data()
                     if library_data:
-                        # 使用页面标题搜索匹配的影视
-                        matches = search_video_by_keyword(library_data, page_title)
+                        # 使用节目标题或页面标题搜索匹配的影视
+                        matches = search_video_by_keyword(library_data, match_keyword)
                         
                         if matches:
                             if len(matches) == 1:
@@ -503,16 +524,22 @@ async def handle_url_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['import_url'] = url
         context.user_data['page_info'] = page_info
         
-        # 如果有页面标题，尝试自动匹配影视库
-        page_title = page_info.get('page_title', '')
-        if page_title:
-            await update.message.reply_text(f"✅ URL验证成功: {url}\n📄 页面标题: {page_title}\n\n🔍 正在尝试自动匹配影视库...")
+        # 优先使用h1节目标题，如果没有则使用页面标题进行匹配
+        show_title = page_info.get('show_title', '').strip()
+        page_title = page_info.get('page_title', '').strip()
+        
+        # 选择最佳匹配关键词：优先使用h1节目标题
+        match_keyword = show_title if show_title else page_title
+        
+        if match_keyword:
+            title_type = "节目标题" if show_title else "页面标题"
+            await update.message.reply_text(f"✅ URL验证成功: {url}\n📄 {title_type}: {match_keyword}\n\n🔍 正在尝试自动匹配影视库...")
             
             # 获取库数据
             library_data = await get_library_data()
             if library_data:
-                # 使用页面标题搜索匹配的影视
-                matches = search_video_by_keyword(library_data, page_title)
+                # 使用节目标题或页面标题搜索匹配的影视
+                matches = search_video_by_keyword(library_data, match_keyword)
                 
                 if matches:
                     if len(matches) == 1:
@@ -789,6 +816,7 @@ async def handle_episode_input(update: Update, context: ContextTypes.DEFAULT_TYP
         page_info = context.user_data.get('page_info', {})
         page_title = page_info.get('page_title', '').strip()
         episode_title = page_info.get('episode_title', '').strip()
+        show_title = page_info.get('show_title', '').strip()
         
         if page_title:  # 只有当标题不为空时才添加到API参数中
             import_data['title'] = page_title
@@ -796,8 +824,8 @@ async def handle_episode_input(update: Update, context: ContextTypes.DEFAULT_TYP
         if episode_title:  # 添加集标题参数
             import_data['episode_title'] = episode_title
         
-        # 添加节目名称参数
-        anime_name = anime.get('title', '')
+        # 添加节目名称参数（优先使用从h1提取的节目标题）
+        anime_name = show_title or anime.get('title', '')
         if anime_name:
             import_data['anime_name'] = anime_name
         
