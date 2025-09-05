@@ -443,11 +443,11 @@ if __name__ == "__main__":
         else:
             logger.info("🔒 Hot reload disabled for production environment")
 
-        loop.run_until_complete(application.initialize())
-        loop.create_task(application.run_polling(allowed_updates=Update.ALL_TYPES))
         logger.info("📡 Bot has started listening for commands (press Ctrl+C to exit gracefully)")
-
-        loop.run_forever()
+        
+        # 直接运行轮询，这会自动处理初始化和事件循环
+        polling_interval = float(os.getenv('TELEGRAM_POLLING_INTERVAL', '10.0'))
+        loop.run_until_complete(application.run_polling(allowed_updates=Update.ALL_TYPES, poll_interval=polling_interval))
 
     except KeyboardInterrupt:
         logger.info("\n🛑 Received termination signal, starting graceful shutdown...")
