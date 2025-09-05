@@ -30,6 +30,8 @@ async def check_url_accessibility(url: str) -> tuple[bool, str, dict]:
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
                 })
                 if content_response.status_code == 200:
+                    # 正确处理字符编码
+                    content_response.encoding = content_response.apparent_encoding or 'utf-8'
                     page_info = extract_detailed_info_from_html(content_response.text)
             except Exception:
                 # 信息解析失败，但不影响URL可访问性判断
@@ -43,6 +45,8 @@ async def check_url_accessibility(url: str) -> tuple[bool, str, dict]:
             if response.status_code == 200:
                 page_info = {'page_title': '', 'episode_title': '', 'original_title': ''}
                 try:
+                    # 正确处理字符编码
+                    response.encoding = response.apparent_encoding or 'utf-8'
                     page_info = extract_detailed_info_from_html(response.text)
                 except Exception:
                     # 信息解析失败，但不影响URL可访问性判断
