@@ -5,6 +5,7 @@ from telegram.error import BadRequest
 from telegram.ext import ContextTypes, ConversationHandler
 from utils.api import call_danmaku_api
 from utils.permission import check_user_permission
+from utils.url_parser import determine_input_type
 
 # 初始化日志
 logger = logging.getLogger(__name__)
@@ -29,7 +30,25 @@ async def search_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 1. 直接带参数（如：/search 海贼王）
     if context.args:
         keyword = " ".join(context.args)
-        return await process_search_media(update, keyword, context)
+        # 保存关键词到上下文
+        context.user_data["import_auto_keyword"] = keyword
+        
+        # 显示媒体类型选择
+        await update.message.reply_text(
+            f"🔍 搜索关键词：{keyword}\n\n请选择媒体类型："
+        )
+        
+        keyboard = [
+            [InlineKeyboardButton("📺 电视剧/动漫", callback_data=json.dumps({"action": "import_auto_media_type", "type": "tv_series"}, ensure_ascii=False))],
+            [InlineKeyboardButton("🎬 电影", callback_data=json.dumps({"action": "import_auto_media_type", "type": "movie"}, ensure_ascii=False))]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(
+            "请选择媒体类型：",
+            reply_markup=reply_markup
+        )
+        return 2  # 等待媒体类型选择
 
     # 2. 无参数：引导用户输入关键词
     await update.message.reply_text("请输入要搜索的媒体关键词（如：海贼王、进击的巨人）：")
@@ -122,8 +141,14 @@ async def process_search_media(update: Update, keyword: str, context: ContextTyp
 
 @check_user_permission
 async def import_auto(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """自动导入命令：显示searchType选择界面"""
-    # 构建searchType选择按钮
+    """自动导入命令：支持直接带参数或显示选择界面"""
+    # 检查是否有参数
+    if context.args:
+        # 有参数：直接处理输入
+        input_text = " ".join(context.args)
+        return await process_auto_input(update, context, input_text)
+    
+    # 无参数：显示searchType选择界面
     keyboard = [
         [InlineKeyboardButton("🔍 关键词搜索", callback_data=json.dumps({"action": "import_auto_search_type", "type": "keyword"}, ensure_ascii=False))],
         [InlineKeyboardButton("🎬 TMDB ID", callback_data=json.dumps({"action": "import_auto_search_type", "type": "tmdb"}, ensure_ascii=False))],
@@ -135,13 +160,93 @@ async def import_auto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await update.message.reply_text(
-        "🚀 **自动导入媒体**\n\n请选择搜索类型：",
+        "🚀 **自动导入媒体**\n\n请选择搜索类型：\n\n💡 **提示**：你也可以直接使用 `/auto 关键词` 或 `/auto TMDB链接` 进行快速导入",
         reply_markup=reply_markup,
         parse_mode="Markdown"
     )
     
     # 返回状态1，等待搜索类型选择
     return 1
+
+
+async def process_auto_input(update: Update, context: ContextTypes.DEFAULT_TYPE, input_text: str):
+    """处理自动输入的文字或链接"""
+    # 判断输入类型
+    input_info = determine_input_type(input_text)
+    
+    if input_info["type"] == "tmdb_url":
+        # TMDB URL：直接解析并导入
+        media_type = input_info["media_type"]
+        tmdb_id = input_info["tmdb_id"]
+        
+        await update.message.reply_text(f"🎬 检测到 TMDB {'电视剧' if media_type == 'tv_series' else '电影'}\n\n正在导入...")
+        
+        if media_type == "movie":
+            # 电影：直接导入
+            import_params = {
+                "searchType": "tmdb",
+                "searchTerm": tmdb_id,
+                "mediaType": media_type,
+                "importMethod": "auto"
+            }
+            await call_import_auto_api(update, context, import_params)
+            return ConversationHandler.END
+        else:
+            # 电视剧：显示导入方式选择
+            context.user_data["import_auto_search_type"] = "tmdb"
+            context.user_data["import_auto_id"] = tmdb_id
+            context.user_data["import_auto_media_type"] = media_type
+            
+            await show_import_options(update, context, {
+                "searchType": "tmdb",
+                "searchTerm": tmdb_id,
+                "mediaType": media_type
+            })
+            return IMPORT_AUTO_METHOD_SELECTION
+    
+    elif input_info["type"] == "tt_id":
+        # tt 开头的 ID：使用 IMDB 搜索
+        tt_id = input_info["value"]
+        
+        await update.message.reply_text(f"🌟 检测到 IMDB ID: {tt_id}\n\n请选择媒体类型：")
+        
+        # 显示媒体类型选择
+        context.user_data["import_auto_search_type"] = "imdb"
+        context.user_data["import_auto_id"] = tt_id
+        
+        keyboard = [
+            [InlineKeyboardButton("📺 电视剧", callback_data=json.dumps({"action": "import_auto_media_type", "type": "tv_series"}, ensure_ascii=False))],
+            [InlineKeyboardButton("🎬 电影", callback_data=json.dumps({"action": "import_auto_media_type", "type": "movie"}, ensure_ascii=False))]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(
+            "请选择媒体类型：",
+            reply_markup=reply_markup
+        )
+        return 2  # 等待媒体类型选择
+    
+    else:
+        # 关键词搜索：默认为电视剧
+        keyword = input_info["value"]
+        
+        await update.message.reply_text(f"🔍 关键词搜索: {keyword}\n\n请选择媒体类型：")
+        
+        # 显示媒体类型选择
+        context.user_data["import_auto_search_type"] = "keyword"
+        context.user_data["import_auto_keyword"] = keyword
+        
+        keyboard = [
+            [InlineKeyboardButton("📺 电视剧", callback_data=json.dumps({"action": "import_auto_media_type", "type": "tv_series"}, ensure_ascii=False))],
+            [InlineKeyboardButton("🎬 电影", callback_data=json.dumps({"action": "import_auto_media_type", "type": "movie"}, ensure_ascii=False))]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(
+            "请选择媒体类型：",
+            reply_markup=reply_markup
+        )
+        return 2  # 等待媒体类型选择
 
 
 async def import_auto_keyword_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -280,13 +385,19 @@ async def show_import_options(update: Update, context: ContextTypes.DEFAULT_TYPE
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    # 构建参数显示文本
-    param_text = "\n".join([f"• {k}: {v}" for k, v in params.items()])
-    
-    await update.message.reply_text(
-        f"请选择导入方式：",
-        reply_markup=reply_markup
-    )
+    # 判断是消息还是回调查询
+    if update.callback_query:
+        # 回调查询：发送新消息
+        await update.callback_query.message.reply_text(
+            "请选择导入方式：",
+            reply_markup=reply_markup
+        )
+    else:
+        # 普通消息：直接回复
+        await update.message.reply_text(
+            "请选择导入方式：",
+            reply_markup=reply_markup
+        )
 
 
 async def call_import_auto_api(update: Update, context: ContextTypes.DEFAULT_TYPE, params: dict):

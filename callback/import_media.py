@@ -166,6 +166,26 @@ async def handle_media_type_selection(update: Update, context: ContextTypes.DEFA
     type_names = {"tv_series": "电视剧/动漫", "movie": "电影"}
     type_name = type_names.get(media_type, media_type)
     
+    # 检查是否已有关键词（来自 /search 命令）
+    existing_keyword = context.user_data.get("import_auto_keyword")
+    if existing_keyword:
+        # 已有关键词，直接进入导入选项
+        await query.edit_message_text(
+            f"✅ 已选择：{type_name}\n关键词：{existing_keyword}\n\n请选择导入方式："
+        )
+        
+        # 保存导入参数
+        context.user_data["import_auto_params"] = {
+            "searchType": "keyword",
+            "searchTerm": existing_keyword,
+            "mediaType": media_type
+        }
+        
+        # 显示导入方式选择
+        from handlers.import_media import show_import_options
+        await show_import_options(update, context, context.user_data["import_auto_params"])
+        return IMPORT_AUTO_METHOD_SELECTION
+    
     # 根据搜索类型决定下一步操作
     search_type = context.user_data.get("import_auto_search_type", "keyword")
     
