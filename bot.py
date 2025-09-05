@@ -227,13 +227,13 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 async def _setup_bot_commands(application: Application):
     """设置 Bot 命令菜单，让用户在 Telegram 客户端看到可用命令"""
     commands = [
-        BotCommand("start", "开始使用机器人 - 查看欢迎信息和指令列表"),
-        BotCommand("auto", "自动导入媒体 - 支持关键词搜索和平台ID导入"),
-        BotCommand("search", "搜索媒体 - 根据关键词搜索媒体内容"),
-        BotCommand("url", "URL导入 - 通过URL导入视频到弹幕库"),
-        BotCommand("tokens", "Token管理 - 查看、添加、删除和管理API tokens"),
-        BotCommand("help", "查看帮助信息 - 显示所有可用指令"),
-        BotCommand("cancel", "取消当前操作 - 退出当前对话流程")
+        BotCommand("start", "开始使用机器人"),
+        BotCommand("auto", "自动导入媒体"),
+        BotCommand("search", "搜索媒体内容"),
+        BotCommand("url", "URL导入视频"),
+        BotCommand("tokens", "管理API令牌"),
+        BotCommand("help", "查看帮助信息"),
+        BotCommand("cancel", "取消当前操作")
     ]
     
     try:

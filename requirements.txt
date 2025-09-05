@@ -5,6 +5,8 @@
 python-telegram-bot[socks]==21.7
 # HTTP请求库（处理与Misaka Danmaku API的交互）
 requests==2.31.0
+# HTML解析库（用于解析网页标题）
+beautifulsoup4==4.12.3
 # 环境变量读取库（加载.env文件中的配置）
 python-dotenv==1.0.0
 
