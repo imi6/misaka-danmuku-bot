@@ -288,7 +288,7 @@ def _setup_handlers(application, handlers_module, callback_module):
     # 创建import_auto回调处理器（需要在ConversationHandler之前定义）
     import_auto_callback_handler = CallbackQueryHandler(
         _wrap_with_session_management(handle_import_auto_callback),
-        pattern=r'{"action": "(import_auto_(search_type|media_type|method)|continue_(season|episode)_import|finish_import)".*}'
+        pattern=r'{"action": "import_auto_.*"}'
     )
 
     # 创建会话处理器
@@ -359,9 +359,9 @@ def _setup_handlers(application, handlers_module, callback_module):
                     _wrap_with_session_management(import_auto_keyword_input)
                 ),
                 CallbackQueryHandler(_wrap_with_session_management(handle_media_type_callback)),
-                CallbackQueryHandler(  # Handle import method selection from keyword input
+                CallbackQueryHandler(  # Handle all import_auto related callbacks
                     _wrap_with_session_management(handle_import_auto_callback),
-                    pattern=r'{"action": "import_auto_method".*}'
+                    pattern=r'{"action": "import_auto_.*"}'
                 )
             ],
             3: [
@@ -369,9 +369,9 @@ def _setup_handlers(application, handlers_module, callback_module):
                     filters.TEXT & ~filters.COMMAND,
                     _wrap_with_session_management(import_auto_id_input)
                 ),
-                CallbackQueryHandler(  # Handle import method selection from ID input
+                CallbackQueryHandler(  # Handle all import_auto related callbacks
                     _wrap_with_session_management(handle_import_auto_callback),
-                    pattern=r'{"action": "import_auto_method".*}'
+                    pattern=r'{"action": "import_auto_.*"}'
                 )
             ],
             4: [
@@ -379,9 +379,9 @@ def _setup_handlers(application, handlers_module, callback_module):
                     filters.TEXT & ~filters.COMMAND,
                     _wrap_with_session_management(import_auto_season_input)
                 ),
-                CallbackQueryHandler(  # Handle continue import callbacks
+                CallbackQueryHandler(  # Handle all import_auto related callbacks
                     _wrap_with_session_management(handle_import_auto_callback),
-                    pattern=r'{"action": "(continue_season_import|continue_episode_import|finish_import)".*}'
+                    pattern=r'{"action": "import_auto_.*"}'
                 )
             ],
             5: [
@@ -396,7 +396,7 @@ def _setup_handlers(application, handlers_module, callback_module):
             ],
             6: [CallbackQueryHandler(  # IMPORT_AUTO_METHOD_SELECTION = 6
                 _wrap_with_session_management(handle_import_auto_callback),
-                pattern=r'{"action": "import_auto_method".*}'
+                pattern=r'{"action": "import_auto_.*"}'
             )],
         },
         fallbacks=[

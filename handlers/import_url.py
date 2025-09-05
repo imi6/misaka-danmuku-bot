@@ -5,7 +5,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, MessageHandler, filters
 from utils.api import call_danmaku_api
 from utils.permission import check_user_permission
-from .show_title_extractor import extract_show_title_from_h1
+from utils.title_extractor import extract_show_title_from_h1
 
 logger = logging.getLogger(__name__)
 
