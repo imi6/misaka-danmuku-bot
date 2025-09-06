@@ -922,3 +922,247 @@ async def handle_finish_import(update: Update, context: ContextTypes.DEFAULT_TYP
         context.user_data.pop(key, None)
     
     return ConversationHandler.END
+
+
+@check_user_permission
+async def handle_search_display_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """处理搜索结果显示模式选择"""
+    query = update.callback_query
+    
+    try:
+        callback_data = json.loads(query.data)
+        mode = callback_data.get("mode")
+        
+        if mode not in ["merged", "paged"]:
+            await query.answer("❌ 无效的显示模式", show_alert=True)
+            return
+        
+        # 获取搜索结果
+        search_results = context.user_data.get("search_results", [])
+        search_id = context.user_data.get("search_id", "")
+        
+        if not search_results or not search_id:
+            await query.answer("❌ 未找到搜索结果，请重新搜索", show_alert=True)
+            return
+        
+        await query.answer(f"📋 切换到{'合并' if mode == 'merged' else '分页'}显示模式")
+        
+        if mode == "merged":
+            await show_merged_results(query, context, search_results, search_id)
+        else:
+            await show_paged_results(query, context, search_results, search_id, page=1)
+            
+    except json.JSONDecodeError:
+        await query.answer("❌ 数据解析失败", show_alert=True)
+    except Exception as e:
+        logger.error(f"处理显示模式选择失败: {e}")
+        await query.answer("❌ 操作失败，请重试", show_alert=True)
+
+
+async def show_merged_results(query, context, search_results, search_id):
+    """显示合并的搜索结果"""
+    # 构建合并的结果文本
+    result_text = f"🔍 **搜索结果** ({len(search_results)} 个)\n\n"
+    
+    for idx, item in enumerate(search_results, 1):
+        result_text += f"**【{idx}】{item.get('title', '未知名称')}**\n"
+        result_text += f"• 类型：{item.get('type', '未知类型')} | 来源：{item.get('provider', '未知来源')}\n"
+        result_text += f"• 年份：{item.get('year', '未知年份')} | 季度：{item.get('season', '未知季度')}\n"
+        result_text += f"• 总集数：{item.get('episodeCount', '0')}集\n\n"
+    
+    # 构建按钮 - 每行显示2个结果的按钮
+    keyboard = []
+    for i in range(0, len(search_results), 2):
+        row = []
+        for j in range(2):
+            if i + j < len(search_results):
+                idx = i + j
+                # 立即导入按钮
+                import_callback = json.dumps({
+                    "action": "import_media",
+                    "result_index": idx
+                }, ensure_ascii=False)
+                row.append(InlineKeyboardButton(
+                    f"🔗 导入【{idx + 1}】",
+                    callback_data=import_callback
+                ))
+        if row:
+            keyboard.append(row)
+    
+    # 添加分集导入按钮行
+    episode_row = []
+    for i in range(0, len(search_results), 2):
+        for j in range(2):
+            if i + j < len(search_results):
+                idx = i + j
+                episode_callback = json.dumps({
+                    "action": "get_media_episode",
+                    "data_id": str(idx)
+                }, ensure_ascii=False)
+                episode_row.append(InlineKeyboardButton(
+                    f"📺 分集【{idx + 1}】",
+                    callback_data=episode_callback
+                ))
+                if len(episode_row) == 2:
+                    keyboard.append(episode_row)
+                    episode_row = []
+    if episode_row:
+        keyboard.append(episode_row)
+    
+    # 添加切换到分页模式的按钮
+    keyboard.append([InlineKeyboardButton(
+        "📄 切换到分页显示",
+        callback_data=json.dumps({"action": "search_display_mode", "mode": "paged"}, ensure_ascii=False)
+    )])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    # 编辑原消息
+    try:
+        await query.edit_message_text(
+            text=result_text,
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+    except Exception as e:
+        logger.error(f"编辑消息失败: {e}")
+        # 如果编辑失败，发送新消息
+        await query.message.reply_text(
+            text=result_text,
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+
+
+async def show_paged_results(update_or_query, context, search_results, page=0, per_page=5):
+    """显示分页的搜索结果"""
+    results_per_page = per_page  # 每页显示结果数量
+    search_id = context.user_data.get("search_id", "")
+    total_pages = (len(search_results) + results_per_page - 1) // results_per_page
+    
+    # 计算当前页的结果范围
+    start_idx = page * results_per_page
+    end_idx = min(start_idx + results_per_page, len(search_results))
+    current_results = search_results[start_idx:end_idx]
+    
+    # 保存分页信息到上下文
+    context.user_data["search_page"] = page
+    context.user_data["search_total_pages"] = total_pages
+    
+    # 发送当前页的结果
+    for idx, item in enumerate(current_results):
+        actual_idx = start_idx + idx
+        result_text = f"""【{actual_idx + 1}/{len(search_results)}】{item.get('title', '未知名称')}
+• 类型：{item.get('type', '未知类型')} | 来源：{item.get('provider', '未知来源')}
+• 年份：{item.get('year', '未知年份')} | 季度：{item.get('season', '未知季度')}
+• 总集数：{item.get('episodeCount', '0')}集"""
+        
+        # 构造回调数据
+        callback_data_import = json.dumps({
+            "action": "import_media",
+            "result_index": actual_idx
+        }, ensure_ascii=False)
+        
+        callback_data_episode = json.dumps({
+            "action": "get_media_episode",
+            "data_id": str(actual_idx)
+        }, ensure_ascii=False)
+        
+        # 生成内联键盘
+        keyboard = [
+            [InlineKeyboardButton(
+                text="🔗 立即导入",
+                callback_data=callback_data_import
+            ),
+            InlineKeyboardButton(
+                text="📺 分集导入",
+                callback_data=callback_data_episode
+            )]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # 发送结果消息
+        if hasattr(update_or_query, 'message'):  # 这是一个Update对象
+            await update_or_query.message.reply_text(
+                text=result_text,
+                reply_markup=reply_markup,
+                parse_mode=None
+            )
+        else:  # 这是一个CallbackQuery对象
+            await update_or_query.message.reply_text(
+                text=result_text,
+                reply_markup=reply_markup,
+                parse_mode=None
+            )
+    
+    # 发送分页控制消息
+    page_text = f"📄 第 {page + 1}/{total_pages} 页 | 共 {len(search_results)} 个结果"
+    page_keyboard = []
+    
+    # 分页按钮
+    nav_row = []
+    if page > 0:
+        nav_row.append(InlineKeyboardButton(
+            "⬅️ 上一页",
+            callback_data=json.dumps({"action": "search_page", "page": page - 1}, ensure_ascii=False)
+        ))
+    if page < total_pages - 1:
+        nav_row.append(InlineKeyboardButton(
+            "下一页 ➡️",
+            callback_data=json.dumps({"action": "search_page", "page": page + 1}, ensure_ascii=False)
+        ))
+    if nav_row:
+        page_keyboard.append(nav_row)
+    
+    page_reply_markup = InlineKeyboardMarkup(page_keyboard) if page_keyboard else None
+    
+    # 发送分页控制消息
+    if hasattr(update_or_query, 'message'):  # 这是一个Update对象
+        if page_reply_markup:
+            await update_or_query.message.reply_text(
+                text=page_text,
+                reply_markup=page_reply_markup
+            )
+        else:
+            await update_or_query.message.reply_text(text=page_text)
+    else:  # 这是一个CallbackQuery对象
+        try:
+            await update_or_query.edit_message_text(
+                text=page_text,
+                reply_markup=page_reply_markup
+            )
+        except Exception as e:
+            logger.error(f"编辑分页消息失败: {e}")
+            if page_reply_markup:
+                await update_or_query.message.reply_text(
+                    text=page_text,
+                    reply_markup=page_reply_markup
+                )
+            else:
+                await update_or_query.message.reply_text(text=page_text)
+
+
+@check_user_permission
+async def handle_search_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """处理搜索结果翻页"""
+    query = update.callback_query
+    
+    try:
+        callback_data = json.loads(query.data)
+        page = callback_data.get("page", 0)
+        
+        # 获取搜索结果
+        search_results = context.user_data.get("search_results", [])
+        
+        if not search_results:
+            await query.answer("❌ 未找到搜索结果，请重新搜索", show_alert=True)
+            return
+        
+        await query.answer(f"📄 跳转到第 {page + 1} 页")
+        await show_paged_results(query, context, search_results, page, 5)
+        
+    except json.JSONDecodeError:
+        await query.answer("❌ 数据解析失败", show_alert=True)
+    except Exception as e:
+        logger.error(f"处理翻页失败: {e}")
+        await query.answer("❌ 翻页失败，请重试", show_alert=True)

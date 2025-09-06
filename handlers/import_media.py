@@ -79,47 +79,13 @@ async def process_search_media(update: Update, keyword: str, context: ContextTyp
 
     # 3. 保存searchId到上下文（供后续导入使用）
     context.user_data["search_id"] = search_id
-    await update.message.reply_text(f"✅ 找到 {len(items)} 个结果，点击「导入」按钮直接添加：")
     
-    # 4. 生成带「导入按钮」的结果消息
-    for idx, item in enumerate(items, 1):
-        result_text = f"""
-【{idx}/{len(items)}】{item.get('title', '未知名称')}
-• 类型：{item.get('type', '未知类型')} | 来源：{item.get('provider', '未知来源')}
-• 年份：{item.get('year', '未知年份')} | 季度：{item.get('season', '未知季度')}
-• 总集数：{item.get('episodeCount', '0')}集
-        """.strip()
-        
-        # 构造回调数据（含result_index，0开始）
-        callback_data_import = json.dumps({
-            "action": "import_media",
-            "result_index": idx - 1
-        }, ensure_ascii=False)
-
-        callback_data_episode = json.dumps({
-            "action": "get_media_episode",
-            "data_id": str(idx - 1)  # 使用data_id统一参数名
-        }, ensure_ascii=False)
-        
-        # 生成内联键盘
-        keyboard = [
-            [InlineKeyboardButton(
-                text="🔗 立即导入",
-                callback_data=callback_data_import
-            ),
-            InlineKeyboardButton(
-                text="🔗 分集导入",
-                callback_data=callback_data_episode
-            )]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        # 发送单条结果+按钮
-        await update.message.reply_text(
-            text=result_text,
-            reply_markup=reply_markup,
-            parse_mode=None  # 避免特殊符号解析错误
-        )
+    # 4. 保存搜索结果到上下文
+    context.user_data["search_results"] = items
+    
+    # 5. 直接显示分页结果（每页5条）
+    from callback.import_media import show_paged_results
+    await show_paged_results(update, context, items, page=0, per_page=5)
     
     # 返回搜索结果状态，保持对话继续
     return SEARCH_RESULTS

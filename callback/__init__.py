@@ -6,6 +6,8 @@ from .import_media import (
     handle_import_auto_callback,
     handle_search_type_callback,
     handle_media_type_callback,
+    handle_search_display_mode,
+    handle_search_page,
 )
 
 __all__ = [
@@ -16,4 +18,6 @@ __all__ = [
     "handle_import_auto_callback",
     "handle_search_type_callback",
     "handle_media_type_callback",
+    "handle_search_display_mode",
+    "handle_search_page",
 ]
