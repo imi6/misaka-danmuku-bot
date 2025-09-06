@@ -18,42 +18,37 @@ async def check_url_accessibility(url: str) -> tuple[bool, str, dict]:
     Returns:
         tuple[bool, str, dict]: (是否可访问, 错误信息或状态描述, 页面详细信息)
     """
+    # 更完整的请求头，特别针对bilibili等网站
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'DNT': '1',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Cache-Control': 'max-age=0'
+    }
+    
     try:
-        # 发送HEAD请求检查URL可访问性
-        response = requests.head(url, timeout=10, allow_redirects=True)
+        # 对于某些网站（如bilibili），直接使用GET请求而不是HEAD
+        # 因为HEAD请求可能被拒绝或返回不准确的状态码
+        response = requests.get(url, timeout=15, headers=headers, allow_redirects=True)
         
         if response.status_code == 200:
-            # HEAD请求成功，尝试获取页面内容解析详细信息（失败不影响主流程）
             page_info = {'page_title': '', 'episode_title': '', 'original_title': ''}
             try:
-                content_response = requests.get(url, timeout=15, headers={
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                })
-                if content_response.status_code == 200:
-                    # 正确处理字符编码
-                    content_response.encoding = content_response.apparent_encoding or 'utf-8'
-                    page_info = extract_detailed_info_from_html(content_response.text)
+                # 正确处理字符编码
+                response.encoding = response.apparent_encoding or 'utf-8'
+                page_info = extract_detailed_info_from_html(response.text)
             except Exception:
                 # 信息解析失败，但不影响URL可访问性判断
                 pass
             return True, "URL可访问", page_info
-                
-        elif response.status_code == 405:  # Method Not Allowed，尝试GET请求
-            response = requests.get(url, timeout=15, headers={
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            })
-            if response.status_code == 200:
-                page_info = {'page_title': '', 'episode_title': '', 'original_title': ''}
-                try:
-                    # 正确处理字符编码
-                    response.encoding = response.apparent_encoding or 'utf-8'
-                    page_info = extract_detailed_info_from_html(response.text)
-                except Exception:
-                    # 信息解析失败，但不影响URL可访问性判断
-                    pass
-                return True, "URL可访问", page_info
-            else:
-                return False, f"HTTP {response.status_code}: {response.reason}", {'page_title': '', 'episode_title': '', 'original_title': ''}
         else:
             return False, f"HTTP {response.status_code}: {response.reason}", {'page_title': '', 'episode_title': '', 'original_title': ''}
             
