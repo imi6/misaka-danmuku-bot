@@ -40,6 +40,9 @@ services:
       # TVDB配置（可选，用于TVDB链接解析）
       - TVDB_API_KEY=your_tvdb_api_key_here
 
+      # BGM配置（可选，用于Bangumi链接解析）
+      - BGM_ACCESS_TOKEN=your_bgm_access_token_here
+
       # 其他可选配置
       - API_TIMEOUT=60
       - LOG_LEVEL=INFO
@@ -69,6 +72,7 @@ docker-compose up -d
 - `LOG_LEVEL`: 日志级别（INFO/DEBUG/WARNING/ERROR，默认 INFO）
 - `TMDB_API_KEY`: TMDB API 密钥（用于智能搜索辅助，从 https://www.themoviedb.org/settings/api 获取）
 - `TVDB_API_KEY`: TVDB API 密钥（用于TVDB链接解析和媒体信息获取，从 https://thetvdb.com/api-information 获取）
+- `BGM_ACCESS_TOKEN`: Bangumi API 访问令牌（用于BGM链接解析和媒体信息获取，从 https://bgm.tv/dev/app 创建应用获取）
 
 ### 本地开发
 
@@ -101,6 +105,9 @@ python bot.py
 - 🔄 自动导入功能
 - 🧠 TMDB智能搜索辅助（自动识别电影/电视剧类型）
 - 📺 TVDB链接解析支持（自动识别TVDB链接并获取媒体信息）
+- 🎭 豆瓣链接解析支持（自动识别豆瓣链接并获取媒体信息）
+- 🌟 IMDB链接解析支持（自动识别IMDB链接并获取媒体信息）
+- 🎯 Bangumi(BGM)链接解析支持（自动识别BGM链接并获取媒体信息，支持API和爬虫双模式）
 - 🌐 代理支持
 - 📊 详细日志记录
 - 🔥 热重载开发支持

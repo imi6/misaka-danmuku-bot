@@ -146,7 +146,7 @@ async def import_auto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await update.message.reply_text(
-        "🚀 **自动导入媒体**\n\n请选择搜索类型：\n\n💡 **提示**：你也可以直接使用 `/auto 关键词` 或 `/auto TMDB链接` 进行快速导入",
+        "🚀 **自动导入媒体**\n\n请选择搜索类型：\n\n💡 **提示**：你也可以直接使用 `/auto 关键词` 或 `/auto 平台链接` 进行快速导入\n\n🔗 **支持的平台链接**：TMDB、TVDB、豆瓣、IMDB、Bangumi(BGM)",
         reply_markup=reply_markup,
         parse_mode="Markdown"
     )

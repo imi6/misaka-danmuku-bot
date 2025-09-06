@@ -228,7 +228,7 @@ async def _setup_bot_commands(application: Application):
     """设置 Bot 命令菜单，让用户在 Telegram 客户端看到可用命令"""
     commands = [
         BotCommand("start", "开始使用机器人"),
-        BotCommand("auto", "自动导入媒体"),
+        BotCommand("auto", "自动导入媒体（支持多平台链接）"),
         BotCommand("search", "搜索媒体内容"),
         BotCommand("url", "URL导入视频"),
         BotCommand("refresh", "刷新数据源"),
