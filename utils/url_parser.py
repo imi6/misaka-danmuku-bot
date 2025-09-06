@@ -89,6 +89,46 @@ def is_tvdb_url(text: str) -> bool:
     """
     return parse_tvdb_url(text) is not None
 
+def parse_douban_url(url: str) -> Optional[Dict[str, Any]]:
+    """解析豆瓣 URL，提取 ID
+    
+    Args:
+        url: 豆瓣 URL，如 https://movie.douban.com/subject/1234567/
+        
+    Returns:
+        Dict 包含 douban_id，如果解析失败返回 None
+        
+    Examples:
+        parse_douban_url("https://movie.douban.com/subject/1234567/")
+        # 返回: {"douban_id": "1234567"}
+        
+        parse_douban_url("https://m.douban.com/movie/subject/1234567/")
+        # 返回: {"douban_id": "1234567"}
+    """
+    # 豆瓣 URL 正则表达式，支持桌面版和移动版
+    douban_pattern = r'https?://(?:(?:movie|m)\.)?douban\.com/(?:movie/)?subject/(\d+)/?(?:\?.*)?$'
+    
+    match = re.match(douban_pattern, url.strip())
+    if not match:
+        return None
+    
+    douban_id = match.group(1)
+    
+    return {
+        "douban_id": douban_id
+    }
+
+def is_douban_url(text: str) -> bool:
+    """检查文本是否为豆瓣 URL
+    
+    Args:
+        text: 要检查的文本
+        
+    Returns:
+        bool: 如果是豆瓣 URL 返回 True，否则返回 False
+    """
+    return parse_douban_url(text) is not None
+
 def is_tt_id(text: str) -> bool:
     """检查文本是否为 tt 开头的 ID 格式（如 tt525553）
     
@@ -116,6 +156,9 @@ def determine_input_type(text: str) -> Dict[str, Any]:
         determine_input_type("https://www.thetvdb.com/series/san-da-dui")
         # 返回: {"type": "tvdb_url", "media_type": "tv_series", "slug": "san-da-dui"}
         
+        determine_input_type("https://movie.douban.com/subject/1234567/")
+        # 返回: {"type": "douban_url", "douban_id": "1234567"}
+        
         determine_input_type("tt525553")
         # 返回: {"type": "tt_id", "value": "tt525553"}
         
@@ -140,6 +183,14 @@ def determine_input_type(text: str) -> Dict[str, Any]:
             "type": "tvdb_url",
             "media_type": tvdb_info["media_type"],
             "slug": tvdb_info["slug"]
+        }
+    
+    # 检查是否为豆瓣 URL
+    douban_info = parse_douban_url(text)
+    if douban_info:
+        return {
+            "type": "douban_url",
+            "douban_id": douban_info["douban_id"]
         }
     
     # 检查是否为 tt 开头的 ID

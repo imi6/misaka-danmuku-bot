@@ -246,6 +246,96 @@ async def process_auto_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
             await update.message.reply_text(f"❌ TVDB查询失败\n\n无法找到slug '{slug}' 对应的媒体信息，请检查链接是否正确。")
             return ConversationHandler.END
     
+    elif input_info["type"] == "douban_url":
+        # 豆瓣链接：通过爬虫获取媒体信息并自动识别类型
+        douban_id = input_info["douban_id"]
+        
+        await update.message.reply_text(f"🎭 检测到豆瓣链接\n\n📋 ID: {douban_id}\n\n🔍 正在获取豆瓣媒体信息...")
+        
+        # 通过爬虫获取豆瓣媒体信息
+        from utils.douban_scraper import get_douban_media_info
+        
+        try:
+            douban_info = await get_douban_media_info(douban_id)
+            
+            if douban_info and douban_info.get('success'):
+                media_title = douban_info.get('title', 'N/A')
+                media_year = douban_info.get('year', 'N/A')
+                genres = douban_info.get('genres', [])
+                rating = douban_info.get('rating', 'N/A')
+                
+                # 使用豆瓣爬虫返回的媒体类型
+                media_type = douban_info.get('media_type', 'movie')
+                if media_type == 'tv_series':
+                    type_name = '电视剧/动漫'
+                else:
+                    type_name = '电影'
+                
+                await update.message.reply_text(
+                    f"✅ **豆瓣信息获取成功**\n\n"
+                    f"🎬 标题: {media_title}\n"
+                    f"📅 年份: {media_year}\n"
+                    f"🎭 类型: {type_name}\n"
+                    f"⭐ 评分: {rating}\n\n"
+                    f"正在导入...",
+                    parse_mode="Markdown"
+                )
+                
+                if media_type == "movie":
+                    # 电影：直接导入
+                    import_params = {
+                        "searchType": "douban",
+                        "searchTerm": douban_id,
+                        "mediaType": media_type,
+                        "importMethod": "auto"
+                    }
+                    await call_import_auto_api(update, context, import_params)
+                    return ConversationHandler.END
+                else:
+                    # 电视剧：显示导入方式选择
+                    context.user_data["import_auto_search_type"] = "douban"
+                    context.user_data["import_auto_id"] = douban_id
+                    context.user_data["import_auto_media_type"] = media_type
+                    
+                    await show_import_options(update, context, {
+                        "searchType": "douban",
+                        "searchTerm": douban_id,
+                        "mediaType": media_type
+                    })
+                    return IMPORT_AUTO_METHOD_SELECTION
+            else:
+                # 豆瓣信息获取失败
+                error_msg = douban_info.get('error', '未知错误') if douban_info else '网络请求失败'
+                
+                await update.message.reply_text(
+                    f"❌ **豆瓣信息获取失败**\n\n"
+                    f"无法获取豆瓣ID '{douban_id}' 的媒体信息。\n\n"
+                    f"💡 **错误信息:** {error_msg}\n\n"
+                    f"🔄 **建议:**\n"
+                    f"• 检查豆瓣链接是否正确\n"
+                    f"• 稍后重试\n"
+                    f"• 使用关键词搜索",
+                    parse_mode="Markdown"
+                )
+                return ConversationHandler.END
+                
+        except Exception as e:
+            logger.error(f"豆瓣爬虫异常: douban_id='{douban_id}', error={str(e)}")
+            
+            await update.message.reply_text(
+                f"❌ **豆瓣信息获取异常**\n\n"
+                f"处理豆瓣ID '{douban_id}' 时发生错误。\n\n"
+                f"💡 **可能的原因:**\n"
+                f"• 豆瓣网站访问限制\n"
+                f"• 网络连接问题\n"
+                f"• 页面结构变化\n\n"
+                f"🔄 **建议:**\n"
+                f"• 稍后重试\n"
+                f"• 使用其他搜索方式",
+                parse_mode="Markdown"
+            )
+            return ConversationHandler.END
+    
     elif input_info["type"] == "tt_id":
         # tt 开头的 ID：使用 IMDB 搜索
         tt_id = input_info["value"]
@@ -491,6 +581,102 @@ async def import_auto_id_input(update: Update, context: ContextTypes.DEFAULT_TYP
             f"🎭 检测到类型: {type_name}\n\n"
             f"🔍 正在查询TVDB数字ID..."
         )
+        
+    elif input_type == "douban_url" and search_type == "douban":
+        # 豆瓣链接：通过爬虫获取媒体信息
+        douban_id = result['douban_id']
+        
+        await update.message.reply_text(
+            f"🔗 **豆瓣链接解析成功**\n\n"
+            f"📋 ID: {douban_id}\n\n"
+            f"🔍 正在获取豆瓣媒体信息..."
+        )
+        
+        # 通过爬虫获取豆瓣媒体信息
+        from utils.douban_scraper import get_douban_media_info
+        
+        try:
+            douban_info = await get_douban_media_info(douban_id)
+            
+            if douban_info and douban_info.get('success'):
+                media_title = douban_info.get('title', 'N/A')
+                media_year = douban_info.get('year', 'N/A')
+                genres = douban_info.get('genres', [])
+                rating = douban_info.get('rating', 'N/A')
+                
+                # 将豆瓣类型转换为标准类型
+                # 检查类型信息，豆瓣通常在genres中包含类型信息
+                genres_str = ' '.join(genres) if isinstance(genres, list) else str(genres)
+                if '电视剧' in genres_str or '剧集' in genres_str or '动画' in genres_str or '综艺' in genres_str:
+                    auto_detected_type = 'tv_series'
+                    type_name = '电视剧/动漫'
+                else:
+                    auto_detected_type = 'movie'
+                    type_name = '电影'
+                
+                await update.message.reply_text(
+                    f"✅ **豆瓣信息获取成功**\n\n"
+                    f"🎬 标题: {media_title}\n"
+                    f"📅 年份: {media_year}\n"
+                    f"🎭 类型: {type_name}\n"
+                    f"⭐ 评分: {rating}\n\n"
+                    f"✅ 自动使用检测到的类型进行导入..."
+                )
+                
+                # 保存解析结果
+                context.user_data["import_auto_id"] = douban_id
+                context.user_data["import_auto_media_type"] = auto_detected_type
+                
+                if auto_detected_type == "movie":
+                    # 电影类型：直接导入
+                    import_params = {
+                        "searchType": search_type,
+                        "searchTerm": douban_id,
+                        "mediaType": auto_detected_type,
+                        "importMethod": "auto"
+                    }
+                    await call_import_auto_api(update, context, import_params)
+                    return ConversationHandler.END
+                else:
+                    # 电视剧类型：显示导入方式选择
+                    context.user_data["import_auto_params"] = {
+                        "searchType": search_type,
+                        "searchTerm": douban_id,
+                        "mediaType": auto_detected_type
+                    }
+                    
+                    await show_import_options(update, context, context.user_data["import_auto_params"])
+                    return IMPORT_AUTO_METHOD_SELECTION
+            else:
+                # 豆瓣信息获取失败
+                error_msg = douban_info.get('error', '未知错误') if douban_info else '网络请求失败'
+                
+                await update.message.reply_text(
+                    f"❌ **豆瓣信息获取失败**\n\n"
+                    f"无法获取豆瓣ID '{douban_id}' 的媒体信息。\n\n"
+                    f"💡 **错误信息:** {error_msg}\n\n"
+                    f"🔄 **建议:**\n"
+                    f"• 检查豆瓣链接是否正确\n"
+                    f"• 稍后重试\n"
+                    f"• 使用关键词搜索"
+                )
+                return ConversationHandler.END
+                
+        except Exception as e:
+            logger.error(f"豆瓣爬虫异常: douban_id='{douban_id}', error={str(e)}")
+            
+            await update.message.reply_text(
+                f"❌ **豆瓣信息获取异常**\n\n"
+                f"处理豆瓣ID '{douban_id}' 时发生错误。\n\n"
+                f"💡 **可能的原因:**\n"
+                f"• 豆瓣网站访问限制\n"
+                f"• 网络连接问题\n"
+                f"• 页面结构变化\n\n"
+                f"🔄 **建议:**\n"
+                f"• 稍后重试\n"
+                f"• 使用其他搜索方式"
+            )
+            return ConversationHandler.END
         
         # 通过API查询获取数字ID
         logger.info(f"开始TVDB查询: slug='{slug}', media_type='{auto_detected_type}'")
