@@ -230,7 +230,7 @@ async def _setup_bot_commands(application: Application):
         BotCommand("start", "开始使用机器人"),
         BotCommand("auto", "自动导入媒体（支持多平台链接）"),
         BotCommand("search", "搜索媒体内容"),
-        BotCommand("url", "URL导入视频"),
+        BotCommand("url", "为已存在的数据源导入指定集数"),
         BotCommand("refresh", "刷新数据源"),
         BotCommand("tokens", "管理API令牌"),
         BotCommand("help", "查看帮助信息"),

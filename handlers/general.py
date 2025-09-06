@@ -10,7 +10,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 【📥 媒体导入】
 /search [关键词] - 搜索媒体（如：/search 火影忍者）
 /auto - 自动导入媒体（支持关键词搜索和多平台链接导入）
-/url - URL导入媒体（支持关键词搜索和URL导入）
+/url - 为已存在的数据源导入指定集数
 
 【🔑 Token管理】
 /tokens - 管理API访问令牌
@@ -46,7 +46,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 【📥 媒体导入】
 /search [关键词] - 搜索媒体（如：/search 火影忍者）
 /auto - 自动导入媒体（支持关键词搜索和多平台链接导入）
-/url - URL导入媒体（支持关键词搜索和URL导入）
+/url - 为已存在的数据源导入指定集数
 
 【🔑 Token管理】
 /tokens - 管理API访问令牌
