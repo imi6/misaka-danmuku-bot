@@ -367,11 +367,11 @@ async def handle_refresh_episode_input(update: Update, context: ContextTypes.DEF
 def parse_episode_input(user_input: str, episodes):
     """解析用户输入的集数"""
     episode_ids = []
-    episode_map = {ep.get('episodeIndex'): ep.get('episodeId') for ep in episodes}
+    episode_map = {ep.get('episodeIndex'): ep.get('episodeId') for ep in episodes if ep.get('episodeId')}
     
     if user_input.lower() == 'all':
-        # 刷新全部
-        return [ep.get('episodeId') for ep in episodes]
+        # 刷新全部，只返回有效的episodeId
+        return [ep.get('episodeId') for ep in episodes if ep.get('episodeId')]
     
     # 处理逗号分隔的多个输入
     parts = [part.strip() for part in user_input.split(',')]
