@@ -175,6 +175,36 @@ class TVDBConfig:
 
 
 @dataclass
+class BGMConfig:
+    """BGM (Bangumi) API 配置"""
+    access_token: Optional[str] = None
+    base_url: str = "https://api.bgm.tv"
+    
+    def __post_init__(self):
+        if not self.access_token or not self.access_token.strip():
+            logger.info("ℹ️ 未配置 BGM Access Token，将使用网页爬虫方式获取数据")
+            return
+            
+        placeholder_values = ['your_bgm_access_token_here', 'YOUR_BGM_ACCESS_TOKEN', 'placeholder']
+        if self.access_token.strip() in placeholder_values:
+            logger.info("ℹ️ BGM Access Token为占位符值，将使用网页爬虫方式获取数据")
+            return
+            
+        logger.info("✅ BGM API 配置已加载，将使用API方式获取数据")
+    
+    @property
+    def enabled(self) -> bool:
+        """检查BGM API配置是否可用"""
+        if not self.access_token or not self.access_token.strip():
+            return False
+        # 检查是否为占位符值
+        placeholder_values = ['your_bgm_access_token_here', 'YOUR_BGM_ACCESS_TOKEN', 'placeholder']
+        if self.access_token.strip() in placeholder_values:
+            return False
+        return True
+
+
+@dataclass
 class ProxyConfig:
     """代理配置（使用Docker环境变量）"""
     
@@ -285,6 +315,11 @@ class ConfigManager:
                 api_key=os.getenv("TVDB_API_KEY", "")
             )
             
+            # 加载BGM配置
+            self._bgm = BGMConfig(
+                access_token=os.getenv("BGM_ACCESS_TOKEN", "")
+            )
+            
             # 加载代理配置（基于Docker环境变量）
             self._proxy = ProxyConfig()
             
@@ -329,6 +364,13 @@ class ConfigManager:
         if self._tvdb is None:
             raise RuntimeError("TVDB配置未初始化")
         return self._tvdb
+    
+    @property
+    def bgm(self) -> BGMConfig:
+        """获取BGM配置"""
+        if self._bgm is None:
+            raise RuntimeError("BGM配置未初始化")
+        return self._bgm
     
     @property
     def proxy(self) -> ProxyConfig:
@@ -419,3 +461,8 @@ TMDB_ENABLED = config.tmdb.enabled
 TVDB_API_KEY = config.tvdb.api_key
 TVDB_BASE_URL = config.tvdb.base_url
 TVDB_ENABLED = config.tvdb.enabled
+
+# BGM配置
+BGM_ACCESS_TOKEN = config.bgm.access_token
+BGM_BASE_URL = config.bgm.base_url
+BGM_ENABLED = config.bgm.enabled

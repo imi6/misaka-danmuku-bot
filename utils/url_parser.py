@@ -182,6 +182,46 @@ def is_imdb_url(text: str) -> bool:
     """
     return parse_imdb_url(text) is not None
 
+def parse_bgm_url(url: str) -> Optional[Dict[str, Any]]:
+    """解析 BGM (Bangumi) URL，提取 subject ID
+    
+    Args:
+        url: BGM URL，如 https://bgm.tv/subject/453888
+        
+    Returns:
+        Dict 包含 bgm_id，如果解析失败返回 None
+        
+    Examples:
+        parse_bgm_url("https://bgm.tv/subject/453888")
+        # 返回: {"bgm_id": "453888"}
+        
+        parse_bgm_url("https://bangumi.tv/subject/38124")
+        # 返回: {"bgm_id": "38124"}
+    """
+    # BGM URL 正则表达式，支持 bgm.tv 和 bangumi.tv 域名
+    bgm_pattern = r'https?://(?:(?:www\.)?(?:bgm|bangumi)\.tv)/subject/(\d+)/?(?:\?.*)?$'
+    
+    match = re.match(bgm_pattern, url.strip())
+    if not match:
+        return None
+    
+    bgm_id = match.group(1)
+    
+    return {
+        "bgm_id": bgm_id
+    }
+
+def is_bgm_url(text: str) -> bool:
+    """检查文本是否为 BGM URL
+    
+    Args:
+        text: 要检查的文本
+        
+    Returns:
+        bool: 如果是 BGM URL 返回 True，否则返回 False
+    """
+    return parse_bgm_url(text) is not None
+
 def is_tt_id(text: str) -> bool:
     """检查文本是否为 tt 开头的 ID 格式（如 tt525553）
     
@@ -214,6 +254,9 @@ def determine_input_type(text: str) -> Dict[str, Any]:
         
         determine_input_type("https://www.imdb.com/title/tt1234567/")
         # 返回: {"type": "imdb_url", "imdb_id": "tt1234567"}
+        
+        determine_input_type("https://bgm.tv/subject/453888")
+        # 返回: {"type": "bgm_url", "bgm_id": "453888"}
         
         determine_input_type("tt525553")
         # 返回: {"type": "tt_id", "value": "tt525553"}
@@ -264,6 +307,14 @@ def determine_input_type(text: str) -> Dict[str, Any]:
         if "media_type" in imdb_info:
             result["media_type"] = imdb_info["media_type"]
         return result
+    
+    # 检查是否为 BGM URL
+    bgm_info = parse_bgm_url(text)
+    if bgm_info:
+        return {
+            "type": "bgm_url",
+            "bgm_id": bgm_info["bgm_id"]
+        }
     
     # 检查是否为 tt 开头的 ID
     if is_tt_id(text):

@@ -9,6 +9,7 @@ from utils.url_parser import determine_input_type
 from utils.tmdb_api import get_media_type_suggestion, format_tmdb_results_info
 from utils.tvdb_api import search_tvdb_by_slug
 from utils.imdb_scraper import get_imdb_info
+from utils.bgm_scraper import get_bgm_info
 
 # 初始化日志
 logger = logging.getLogger(__name__)
@@ -440,6 +441,93 @@ async def process_auto_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
             })
             return IMPORT_AUTO_METHOD_SELECTION
     
+    elif input_info["type"] == "bgm_url":
+        # BGM链接：通过爬虫获取媒体信息并自动识别类型
+        bgm_id = input_info["bgm_id"]
+        
+        await update.message.reply_text(f"🎯 检测到BGM链接\n\n📋 ID: {bgm_id}\n\n🔍 正在获取BGM媒体信息...")
+        
+        try:
+            bgm_info = get_bgm_info(bgm_id)
+            
+            if bgm_info and bgm_info.get('success'):
+                media_title = bgm_info.get('title', 'N/A')
+                media_year = bgm_info.get('year', 'N/A')
+                genres = bgm_info.get('genres', [])
+                rating = bgm_info.get('rating', 'N/A')
+                
+                # 使用BGM爬虫返回的媒体类型
+                media_type = bgm_info.get('media_type', 'tv_series')
+                if media_type == 'tv_series':
+                    type_name = '电视剧/动漫'
+                else:
+                    type_name = '电影'
+                
+                await update.message.reply_text(
+                    f"✅ **BGM信息获取成功**\n\n"
+                    f"🎬 标题: {media_title}\n"
+                    f"📅 年份: {media_year}\n"
+                    f"🎭 类型: {type_name}\n"
+                    f"⭐ 评分: {rating}\n\n"
+                    f"正在导入...",
+                    parse_mode="Markdown"
+                )
+                
+                if media_type == "movie":
+                    # 电影：直接导入
+                    import_params = {
+                        "searchType": "bangumi",
+                        "searchTerm": bgm_id,
+                        "mediaType": media_type,
+                        "importMethod": "auto"
+                    }
+                    await call_import_auto_api(update, context, import_params)
+                    return ConversationHandler.END
+                else:
+                    # 电视剧：显示导入方式选择
+                    context.user_data["import_auto_search_type"] = "bangumi"
+                    context.user_data["import_auto_id"] = bgm_id
+                    context.user_data["import_auto_media_type"] = media_type
+                    
+                    await show_import_options(update, context, {
+                        "searchType": "bangumi",
+                        "searchTerm": bgm_id,
+                        "mediaType": media_type
+                    })
+                    return IMPORT_AUTO_METHOD_SELECTION
+            else:
+                # BGM信息获取失败
+                error_msg = bgm_info.get('error', '未知错误') if bgm_info else '网络请求失败'
+                
+                await update.message.reply_text(
+                    f"❌ **BGM信息获取失败**\n\n"
+                    f"无法获取BGM ID '{bgm_id}' 的媒体信息。\n\n"
+                    f"💡 **错误信息:** {error_msg}\n\n"
+                    f"🔄 **建议:**\n"
+                    f"• 检查BGM链接是否正确\n"
+                    f"• 稍后重试\n"
+                    f"• 使用关键词搜索",
+                    parse_mode="Markdown"
+                )
+                return ConversationHandler.END
+                
+        except Exception as e:
+            logger.error(f"BGM爬虫异常: bgm_id='{bgm_id}', error={str(e)}")
+            
+            await update.message.reply_text(
+                f"❌ **BGM信息获取异常**\n\n"
+                f"处理BGM ID '{bgm_id}' 时发生错误。\n\n"
+                f"💡 **可能的原因:**\n"
+                f"• BGM网站访问限制\n"
+                f"• 网络连接问题\n"
+                f"• 页面结构变化\n\n"
+                f"🔄 **建议:**\n"
+                f"• 稍后重试\n"
+                f"• 使用其他搜索方式",
+                parse_mode="Markdown"
+            )
+            return ConversationHandler.END
+    
     elif input_info["type"] == "tt_id":
         # tt 开头的 ID：使用 IMDB 搜索
         tt_id = input_info["value"]
@@ -682,6 +770,93 @@ async def import_auto_id_input(update: Update, context: ContextTypes.DEFAULT_TYP
             f"📋 ID: {imdb_id}\n\n"
             f"🔍 正在获取IMDB媒体信息..."
         )
+    
+    elif input_type == "bgm_url" and search_type == "bangumi":
+        # BGM链接：使用解析出的ID并通过爬虫获取媒体类型
+        bgm_id = result['bgm_id']
+        
+        await update.message.reply_text(
+            f"🔗 **BGM链接解析成功**\n\n"
+            f"📋 ID: {bgm_id}\n\n"
+            f"🔍 正在获取BGM媒体信息..."
+        )
+        
+        # 通过爬虫获取BGM媒体信息
+        try:
+            bgm_info = get_bgm_info(bgm_id)
+            
+            if bgm_info and bgm_info.get('success'):
+                media_title = bgm_info.get('title', 'N/A')
+                media_year = bgm_info.get('year', 'N/A')
+                media_type = bgm_info.get('media_type', 'tv_series')
+                rating = bgm_info.get('rating', 'N/A')
+                
+                type_name = '电影' if media_type == 'movie' else '电视剧/动漫'
+                
+                await update.message.reply_text(
+                    f"✅ **BGM信息获取成功**\n\n"
+                    f"🎬 名称: {media_title}\n"
+                    f"📅 年份: {media_year}\n"
+                    f"⭐ 评分: {rating}\n"
+                    f"🎭 类型: {type_name}\n\n"
+                    f"✅ 自动使用检测到的类型进行导入..."
+                )
+                
+                # 保存解析结果
+                context.user_data["import_auto_id"] = bgm_id
+                context.user_data["import_auto_media_type"] = media_type
+                
+                if media_type == "movie":
+                    # 电影类型：直接导入
+                    import_params = {
+                        "searchType": search_type,
+                        "searchTerm": bgm_id,
+                        "mediaType": media_type,
+                        "importMethod": "auto"
+                    }
+                    await call_import_auto_api(update, context, import_params)
+                    return ConversationHandler.END
+                else:
+                    # 电视剧类型：显示导入方式选择
+                    context.user_data["import_auto_params"] = {
+                        "searchType": search_type,
+                        "searchTerm": bgm_id,
+                        "mediaType": media_type
+                    }
+                    
+                    await show_import_options(update, context, context.user_data["import_auto_params"])
+                    return IMPORT_AUTO_METHOD_SELECTION
+            else:
+                # BGM信息获取失败
+                error_msg = bgm_info.get('error', '未知错误') if bgm_info else '网络请求失败'
+                
+                await update.message.reply_text(
+                    f"❌ **BGM信息获取失败**\n\n"
+                    f"无法获取BGM ID '{bgm_id}' 的媒体信息。\n\n"
+                    f"💡 **错误信息:** {error_msg}\n\n"
+                    f"🔄 **建议:**\n"
+                    f"• 检查BGM链接是否正确\n"
+                    f"• 稍后重试\n"
+                    f"• 使用其他搜索方式",
+                    parse_mode="Markdown"
+                )
+                return ConversationHandler.END
+                
+        except Exception as e:
+            logger.error(f"BGM爬虫异常: {e}")
+            await update.message.reply_text(
+                f"❌ **BGM信息获取异常**\n\n"
+                f"处理BGM ID '{bgm_id}' 时发生异常。\n\n"
+                f"💡 **可能的原因:**\n"
+                f"• BGM网站访问限制\n"
+                f"• 网络连接问题\n"
+                f"• 页面结构变化\n\n"
+                f"🔄 **建议:**\n"
+                f"• 稍后重试\n"
+                f"• 使用其他搜索方式",
+                parse_mode="Markdown"
+            )
+            return ConversationHandler.END
         
         # 通过爬虫获取IMDB媒体信息
         try:
@@ -750,6 +925,89 @@ async def import_auto_id_input(update: Update, context: ContextTypes.DEFAULT_TYP
             await update.message.reply_text(
                 f"❌ **IMDB信息获取异常**\n\n"
                 f"🔍 ID: {imdb_id}\n"
+                f"❗ 异常: {str(e)}\n\n"
+                f"🔄 请稍后重试或使用其他搜索方式",
+                parse_mode="Markdown"
+            )
+            return ConversationHandler.END
+        
+    elif input_type == "bgm_url" and search_type == "bangumi":
+        # BGM链接：使用解析出的ID并通过爬虫获取媒体类型
+        bgm_id = result['bgm_id']
+        
+        await update.message.reply_text(
+            f"🔗 **BGM链接解析成功**\n\n"
+            f"📋 ID: {bgm_id}\n\n"
+            f"🔍 正在获取BGM媒体信息..."
+        )
+        
+        # 通过爬虫获取BGM媒体信息
+        try:
+            bgm_info = get_bgm_info(bgm_id)
+            
+            if bgm_info and bgm_info.get('success'):
+                media_title = bgm_info.get('title', 'N/A')
+                media_year = bgm_info.get('year', 'N/A')
+                media_type = bgm_info.get('media_type', 'tv_series')
+                rating = bgm_info.get('rating', 'N/A')
+                
+                type_name = '电影' if media_type == 'movie' else '电视剧/动漫'
+                
+                await update.message.reply_text(
+                    f"✅ **BGM信息获取成功**\n\n"
+                    f"🎬 名称: {media_title}\n"
+                    f"📅 年份: {media_year}\n"
+                    f"⭐ 评分: {rating}\n"
+                    f"🎭 类型: {type_name}\n\n"
+                    f"✅ 自动使用检测到的类型进行导入..."
+                )
+                
+                # 保存解析结果
+                context.user_data["import_auto_id"] = bgm_id
+                context.user_data["import_auto_media_type"] = media_type
+                
+                if media_type == "movie":
+                    # 电影类型：直接导入
+                    import_params = {
+                        "searchType": search_type,
+                        "searchTerm": bgm_id,
+                        "mediaType": media_type,
+                        "importMethod": "auto"
+                    }
+                    await call_import_auto_api(update, context, import_params)
+                    return ConversationHandler.END
+                else:
+                    # 电视剧类型：显示导入方式选择
+                    context.user_data["import_auto_params"] = {
+                        "searchType": search_type,
+                        "searchTerm": bgm_id,
+                        "mediaType": media_type
+                    }
+                    
+                    await show_import_options(update, context, context.user_data["import_auto_params"])
+                    return IMPORT_AUTO_METHOD_SELECTION
+            else:
+                # BGM信息获取失败
+                error_msg = bgm_info.get('error', '未知错误') if bgm_info else '网络请求失败'
+                await update.message.reply_text(
+                    f"❌ **BGM信息获取失败**\n\n"
+                    f"🔍 ID: {bgm_id}\n"
+                    f"❗ 错误: {error_msg}\n\n"
+                    f"💡 **可能的原因:**\n"
+                    f"• BGM网站访问限制\n"
+                    f"• 网络连接问题\n"
+                    f"• 页面结构变化\n\n"
+                    f"🔄 **建议:**\n"
+                    f"• 稍后重试\n"
+                    f"• 使用其他搜索方式",
+                    parse_mode="Markdown"
+                )
+                return ConversationHandler.END
+        except Exception as e:
+            logger.error(f"BGM爬虫异常: {e}")
+            await update.message.reply_text(
+                f"❌ **BGM信息获取异常**\n\n"
+                f"🔍 ID: {bgm_id}\n"
                 f"❗ 异常: {str(e)}\n\n"
                 f"🔄 请稍后重试或使用其他搜索方式",
                 parse_mode="Markdown"
@@ -954,9 +1212,78 @@ async def import_auto_id_input(update: Update, context: ContextTypes.DEFAULT_TYP
         platform_id = result.get('value', user_input)
         context.user_data["import_auto_id"] = platform_id
         
-        await update.message.reply_text(
-            f"🆔 **平台ID: {platform_id}**\n\n请选择媒体类型："
-        )
+        # 特殊处理：如果是BGM平台且输入的是纯数字ID，尝试通过爬虫获取媒体信息
+        if search_type == "bangumi" and platform_id.isdigit():
+            await update.message.reply_text(
+                f"🆔 **BGM ID: {platform_id}**\n\n🔍 正在获取BGM媒体信息..."
+            )
+            
+            try:
+                bgm_info = get_bgm_info(platform_id)
+                
+                if bgm_info and bgm_info.get('success'):
+                    media_title = bgm_info.get('title', 'N/A')
+                    media_year = bgm_info.get('year', 'N/A')
+                    media_type = bgm_info.get('media_type', 'tv_series')
+                    rating = bgm_info.get('rating', 'N/A')
+                    
+                    type_name = '电影' if media_type == 'movie' else '电视剧/动漫'
+                    
+                    await update.message.reply_text(
+                        f"✅ **BGM信息获取成功**\n\n"
+                        f"🎬 名称: {media_title}\n"
+                        f"📅 年份: {media_year}\n"
+                        f"⭐ 评分: {rating}\n"
+                        f"🎭 类型: {type_name}\n\n"
+                        f"✅ 自动使用检测到的类型进行导入..."
+                    )
+                    
+                    # 保存解析结果
+                    context.user_data["import_auto_media_type"] = media_type
+                    
+                    if media_type == "movie":
+                        # 电影类型：直接导入
+                        import_params = {
+                            "searchType": search_type,
+                            "searchTerm": platform_id,
+                            "mediaType": media_type,
+                            "importMethod": "auto"
+                        }
+                        await call_import_auto_api(update, context, import_params)
+                        return ConversationHandler.END
+                    else:
+                        # 电视剧类型：显示导入方式选择
+                        context.user_data["import_auto_params"] = {
+                            "searchType": search_type,
+                            "searchTerm": platform_id,
+                            "mediaType": media_type
+                        }
+                        
+                        await show_import_options(update, context, context.user_data["import_auto_params"])
+                        return IMPORT_AUTO_METHOD_SELECTION
+                else:
+                    # BGM信息获取失败，回退到手动选择类型
+                    error_msg = bgm_info.get('error', '未知错误') if bgm_info else '网络请求失败'
+                    await update.message.reply_text(
+                        f"⚠️ **BGM信息获取失败**\n\n"
+                        f"🔍 ID: {platform_id}\n"
+                        f"❗ 错误: {error_msg}\n\n"
+                        f"🔄 将回退到手动选择媒体类型模式\n\n"
+                        f"请选择媒体类型："
+                    )
+            except Exception as e:
+                logger.error(f"BGM爬虫异常: {e}")
+                await update.message.reply_text(
+                    f"⚠️ **BGM信息获取异常**\n\n"
+                    f"🔍 ID: {platform_id}\n"
+                    f"❗ 异常: {str(e)}\n\n"
+                    f"🔄 将回退到手动选择媒体类型模式\n\n"
+                    f"请选择媒体类型："
+                )
+        else:
+            await update.message.reply_text(
+                f"🆔 **平台ID: {platform_id}**\n\n请选择媒体类型："
+            )
         
     else:
         # 其他情况：直接使用输入
