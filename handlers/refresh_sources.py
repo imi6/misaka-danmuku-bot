@@ -157,6 +157,13 @@ async def show_refresh_sources(update: Update, context: ContextTypes.DEFAULT_TYP
         
         sources = response.get('data', [])
         
+        # 调试：检查源数据结构
+        logger.info(f"获取到源数据：总数={len(sources)}")
+        if sources:
+            sample_source = sources[0]
+            logger.info(f"源数据样例：{sample_source}")
+            logger.info(f"源数据字段：{list(sample_source.keys())}")
+        
         if not sources:
             await update.message.reply_text(
                 "❌ 该影视暂无可用源"
@@ -207,6 +214,14 @@ async def handle_refresh_source_selection(update: Update, context: ContextTypes.
         selection = int(update.message.text.strip())
         sources = context.user_data.get('refresh_anime_sources', [])
         
+        # 调试：检查context中的源数据
+        logger.info(f"处理源选择：输入={selection}, 源列表长度={len(sources)}")
+        if sources:
+            logger.info(f"源列表样例：{sources[0]}")
+        else:
+            logger.warning("源列表为空！检查context数据")
+            logger.info(f"当前context.user_data keys: {list(context.user_data.keys())}")
+        
         if 1 <= selection <= len(sources):
             selected_source = sources[selection - 1]
             anime = context.user_data.get('refresh_selected_anime')
@@ -239,6 +254,13 @@ async def show_refresh_options(update: Update, context: ContextTypes.DEFAULT_TYP
             return ConversationHandler.END
         
         episodes = response.get('data', [])
+        
+        # 调试：检查媒体库API返回的数据结构
+        logger.info(f"媒体库API返回分集数据：总数={len(episodes)}")
+        if episodes:
+            sample_episode = episodes[0]
+            logger.info(f"媒体库API分集数据样例：{sample_episode}")
+            logger.info(f"媒体库API分集字段：{list(sample_episode.keys())}")
         
         if not episodes:
             await update.message.reply_text(
@@ -381,7 +403,9 @@ def parse_episode_input(user_input: str, episodes):
     
     if user_input.lower() == 'all':
         # 刷新全部，只返回有效的episodeId
-        return [ep.get('episodeId') for ep in episodes if ep.get('episodeId')]
+        all_episode_ids = [ep.get('episodeId') for ep in episodes if ep.get('episodeId')]
+        logger.info(f"解析'all'输入：总集数={len(episodes)}, 有效episodeId数量={len(all_episode_ids)}, episodeIds={all_episode_ids}")
+        return all_episode_ids
     
     # 处理逗号分隔的多个输入
     parts = [part.strip() for part in user_input.split(',')]
@@ -414,6 +438,7 @@ async def execute_episode_refresh(update: Update, context: ContextTypes.DEFAULT_
     source_name = source_info.get('source_name', '未知源')
     
     total_count = len(episode_ids)
+    logger.info(f"开始执行分集刷新：影视={anime_title}, 数据源={source_name}, 集数={total_count}, episodeIds={episode_ids}")
     
     await update.message.reply_text(
         f"🔄 **开始刷新分集**\n\n"
@@ -430,15 +455,19 @@ async def execute_episode_refresh(update: Update, context: ContextTypes.DEFAULT_
     
     for episode_id in episode_ids:
         try:
+            logger.info(f"正在刷新分集 {episode_id}...")
             response = call_danmaku_api('POST', f'/library/episode/{episode_id}/refresh')
+            logger.info(f"分集 {episode_id} API响应: {response}")
             
             if response and response.get('success'):
                 success_count += 1
                 task_id = response.get('data', {}).get('taskId')
                 if task_id:
                     task_ids.append(task_id)
+                logger.info(f"分集 {episode_id} 刷新成功，taskId: {task_id}")
             else:
                 failed_count += 1
+                logger.warning(f"分集 {episode_id} 刷新失败，API响应: {response}")
                 
         except Exception as e:
             logger.error(f"刷新分集 {episode_id} 失败: {e}")
