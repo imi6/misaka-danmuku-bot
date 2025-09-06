@@ -111,8 +111,18 @@ async def show_refresh_anime_selection(update: Update, context: ContextTypes.DEF
 
 async def handle_refresh_anime_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理刷新影视选择"""
+    user_input = update.message.text.strip()
+    
+    # 检查是否输入了'all'，给出更明确的提示
+    if user_input.lower() == 'all':
+        await update.message.reply_text(
+            "❌ 请先选择要刷新的影视，然后在分集选择时才能使用 'all'\n\n"
+            "请输入上方列表中的数字序号来选择影视："
+        )
+        return REFRESH_ANIME_SELECT
+    
     try:
-        selection = int(update.message.text.strip())
+        selection = int(user_input)
         matches = context.user_data.get('refresh_anime_matches', [])
         
         if 1 <= selection <= len(matches):
