@@ -440,14 +440,8 @@ def _setup_handlers(application, handlers_module, callback_module):
     application.add_handler(import_callback_handler)
     current_handlers["import_callback_handler"] = import_callback_handler
 
-    # 添加搜索显示模式回调处理器
-    from callback.import_media import handle_search_display_mode, handle_search_page
-    search_display_mode_handler = CallbackQueryHandler(
-        _wrap_with_session_management(handle_search_display_mode),
-        pattern=r'{"action": "search_display_mode".*}'
-    )
-    application.add_handler(search_display_mode_handler)
-    current_handlers["search_display_mode_handler"] = search_display_mode_handler
+    # 添加搜索分页回调处理器
+    from callback.import_media import handle_search_page
 
     # 添加搜索分页回调处理器
     search_page_handler = CallbackQueryHandler(
