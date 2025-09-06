@@ -145,6 +145,36 @@ class TMDBConfig:
 
 
 @dataclass
+class TVDBConfig:
+    """TVDB API 配置"""
+    api_key: Optional[str] = None
+    base_url: str = "https://api4.thetvdb.com/v4"
+    
+    def __post_init__(self):
+        if not self.api_key or not self.api_key.strip():
+            logger.info("ℹ️ 未配置 TVDB API Key，将跳过 TVDB 辅助搜索")
+            return
+            
+        placeholder_values = ['your_tvdb_api_key_here', 'YOUR_TVDB_API_KEY', 'placeholder']
+        if self.api_key.strip() in placeholder_values:
+            logger.info("ℹ️ TVDB API Key为占位符值，请配置真实的API密钥")
+            return
+            
+        logger.info("✅ TVDB API 配置已加载")
+    
+    @property
+    def enabled(self) -> bool:
+        """检查TVDB配置是否可用"""
+        if not self.api_key or not self.api_key.strip():
+            return False
+        # 检查是否为占位符值
+        placeholder_values = ['your_tvdb_api_key_here', 'YOUR_TVDB_API_KEY', 'placeholder']
+        if self.api_key.strip() in placeholder_values:
+            return False
+        return True
+
+
+@dataclass
 class ProxyConfig:
     """代理配置（使用Docker环境变量）"""
     
@@ -199,6 +229,7 @@ class ConfigManager:
         self._telegram: Optional[TelegramConfig] = None
         self._danmaku_api: Optional[DanmakuAPIConfig] = None
         self._tmdb: Optional[TMDBConfig] = None
+        self._tvdb: Optional[TVDBConfig] = None
         self._proxy: Optional[ProxyConfig] = None
         self._app: Optional[AppConfig] = None
         self._load_config()
@@ -249,6 +280,11 @@ class ConfigManager:
                 api_key=os.getenv("TMDB_API_KEY", "")
             )
             
+            # 加载TVDB配置
+            self._tvdb = TVDBConfig(
+                api_key=os.getenv("TVDB_API_KEY", "")
+            )
+            
             # 加载代理配置（基于Docker环境变量）
             self._proxy = ProxyConfig()
             
@@ -286,6 +322,13 @@ class ConfigManager:
         if self._tmdb is None:
             raise RuntimeError("TMDB配置未初始化")
         return self._tmdb
+    
+    @property
+    def tvdb(self) -> TVDBConfig:
+        """获取TVDB配置"""
+        if self._tvdb is None:
+            raise RuntimeError("TVDB配置未初始化")
+        return self._tvdb
     
     @property
     def proxy(self) -> ProxyConfig:
@@ -330,6 +373,11 @@ class ConfigManager:
                 "api_key": "***" + self.tmdb.api_key[-4:] if self.tmdb.api_key else "未配置",
                 "base_url": self.tmdb.base_url
             },
+            "tvdb": {
+                "enabled": self.tvdb.enabled,
+                "api_key": "***" + self.tvdb.api_key[-4:] if self.tvdb.api_key else "未配置",
+                "base_url": self.tvdb.base_url
+            },
             "proxy": {
                 "enabled": self.proxy.enabled,
                 "url": self.proxy.url if self.proxy.enabled else "未配置"
@@ -366,3 +414,8 @@ LOG_LEVEL = config.app.log_level
 TMDB_API_KEY = config.tmdb.api_key
 TMDB_BASE_URL = config.tmdb.base_url
 TMDB_ENABLED = config.tmdb.enabled
+
+# TVDB配置
+TVDB_API_KEY = config.tvdb.api_key
+TVDB_BASE_URL = config.tvdb.base_url
+TVDB_ENABLED = config.tvdb.enabled

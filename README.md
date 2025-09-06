@@ -37,6 +37,9 @@ services:
       # TMDB配置（可选，用于智能搜索辅助）
       - TMDB_API_KEY=your_tmdb_api_key_here
 
+      # TVDB配置（可选，用于TVDB链接解析）
+      - TVDB_API_KEY=your_tvdb_api_key_here
+
       # 其他可选配置
       - API_TIMEOUT=60
       - LOG_LEVEL=INFO
@@ -65,6 +68,7 @@ docker-compose up -d
 - `API_TIMEOUT`: API 请求超时时间（秒，默认 60）
 - `LOG_LEVEL`: 日志级别（INFO/DEBUG/WARNING/ERROR，默认 INFO）
 - `TMDB_API_KEY`: TMDB API 密钥（用于智能搜索辅助，从 https://www.themoviedb.org/settings/api 获取）
+- `TVDB_API_KEY`: TVDB API 密钥（用于TVDB链接解析和媒体信息获取，从 https://thetvdb.com/api-information 获取）
 
 ### 本地开发
 
@@ -96,6 +100,7 @@ python bot.py
 - 🎯 媒体搜索和导入
 - 🔄 自动导入功能
 - 🧠 TMDB智能搜索辅助（自动识别电影/电视剧类型）
+- 📺 TVDB链接解析支持（自动识别TVDB链接并获取媒体信息）
 - 🌐 代理支持
 - 📊 详细日志记录
 - 🔥 热重载开发支持

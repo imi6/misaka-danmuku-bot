@@ -7,6 +7,7 @@ from utils.api import call_danmaku_api
 from utils.permission import check_user_permission
 from utils.url_parser import determine_input_type
 from utils.tmdb_api import get_media_type_suggestion, format_tmdb_results_info
+from utils.tvdb_api import search_tvdb_by_slug
 
 # 初始化日志
 logger = logging.getLogger(__name__)
@@ -186,6 +187,64 @@ async def process_auto_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
                 "mediaType": media_type
             })
             return IMPORT_AUTO_METHOD_SELECTION
+    
+    elif input_info["type"] == "tvdb_url":
+        # TVDB URL：通过API获取数字ID后导入
+        media_type = input_info["media_type"]
+        slug = input_info["slug"]
+        
+        await update.message.reply_text(f"📺 检测到 TVDB {'电视剧' if media_type == 'tv_series' else '电影'}\n\n正在查询TVDB API获取数字ID...")
+        
+        # 通过API获取数字ID
+        tvdb_result = await search_tvdb_by_slug(slug, media_type)
+        
+        # 如果指定类型查询失败，尝试查询另一种类型作为回退
+        if not tvdb_result or "tvdb_id" not in tvdb_result:
+            fallback_type = "tv_series" if media_type == "movie" else "movie"
+            await update.message.reply_text(f"⚠️ 未找到对应的{'电影' if media_type == 'movie' else '电视剧'}，尝试查询{'电视剧' if fallback_type == 'tv_series' else '电影'}...")
+            tvdb_result = await search_tvdb_by_slug(slug, fallback_type)
+            if tvdb_result and "tvdb_id" in tvdb_result:
+                media_type = fallback_type  # 更新为实际找到的类型
+                await update.message.reply_text(f"✅ 找到了{'电视剧' if media_type == 'tv_series' else '电影'}版本，将使用此类型进行导入")
+        
+        if tvdb_result and "tvdb_id" in tvdb_result:
+            # 提取数字ID部分（去掉series-前缀）
+            raw_tvdb_id = tvdb_result["tvdb_id"]
+            if raw_tvdb_id.startswith("series-"):
+                tvdb_id = raw_tvdb_id.replace("series-", "")
+            elif raw_tvdb_id.startswith("movie-"):
+                tvdb_id = raw_tvdb_id.replace("movie-", "")
+            else:
+                tvdb_id = str(raw_tvdb_id)
+            title = tvdb_result.get("name", "未知标题")
+            
+            await update.message.reply_text(f"✅ TVDB查询成功\n\n📺 标题: {title}\nID: {tvdb_id}\n类型: {'电视剧' if media_type == 'tv_series' else '电影'}\n\n正在导入...")
+            
+            if media_type == "movie":
+                # 电影：直接导入
+                import_params = {
+                    "searchType": "tvdb",
+                    "searchTerm": tvdb_id,
+                    "mediaType": media_type,
+                    "importMethod": "auto"
+                }
+                await call_import_auto_api(update, context, import_params)
+                return ConversationHandler.END
+            else:
+                # 电视剧：显示导入方式选择
+                context.user_data["import_auto_search_type"] = "tvdb"
+                context.user_data["import_auto_id"] = tvdb_id
+                context.user_data["import_auto_media_type"] = media_type
+                
+                await show_import_options(update, context, {
+                    "searchType": "tvdb",
+                    "searchTerm": tvdb_id,
+                    "mediaType": media_type
+                })
+                return IMPORT_AUTO_METHOD_SELECTION
+        else:
+            await update.message.reply_text(f"❌ TVDB查询失败\n\n无法找到slug '{slug}' 对应的媒体信息，请检查链接是否正确。")
+            return ConversationHandler.END
     
     elif input_info["type"] == "tt_id":
         # tt 开头的 ID：使用 IMDB 搜索
@@ -419,6 +478,103 @@ async def import_auto_id_input(update: Update, context: ContextTypes.DEFAULT_TYP
             
             await show_import_options(update, context, context.user_data["import_auto_params"])
             return IMPORT_AUTO_METHOD_SELECTION
+        
+    elif input_type == "tvdb_url" and search_type == "tvdb":
+        # TVDB链接：通过API查询获取数字ID
+        slug = result['slug']
+        auto_detected_type = result['media_type']
+        type_name = '电影' if auto_detected_type == 'movie' else '电视剧/动漫'
+        
+        await update.message.reply_text(
+            f"🔗 **TVDB链接解析成功**\n\n"
+            f"📋 Slug: {slug}\n"
+            f"🎭 检测到类型: {type_name}\n\n"
+            f"🔍 正在查询TVDB数字ID..."
+        )
+        
+        # 通过API查询获取数字ID
+        logger.info(f"开始TVDB查询: slug='{slug}', media_type='{auto_detected_type}'")
+        tvdb_info = await search_tvdb_by_slug(slug, auto_detected_type)
+        logger.info(f"TVDB查询结果: {tvdb_info}")
+        
+        # 如果指定类型查询失败，尝试查询另一种类型作为回退
+        if not tvdb_info or not tvdb_info.get('tvdb_id'):
+            fallback_type = "tv_series" if auto_detected_type == "movie" else "movie"
+            fallback_type_name = '电视剧/动漫' if fallback_type == 'tv_series' else '电影'
+            
+            await update.message.reply_text(
+                f"⚠️ **未找到对应的{type_name}**\n\n"
+                f"🔄 尝试查询{fallback_type_name}..."
+            )
+            
+            logger.info(f"回退查询: slug='{slug}', media_type='{fallback_type}'")
+            tvdb_info = await search_tvdb_by_slug(slug, fallback_type)
+            logger.info(f"回退查询结果: {tvdb_info}")
+            
+            if tvdb_info and tvdb_info.get('tvdb_id'):
+                auto_detected_type = fallback_type  # 更新为实际找到的类型
+                type_name = fallback_type_name
+                await update.message.reply_text(
+                    f"✅ **找到了{type_name}版本**\n\n"
+                    f"将使用此类型进行导入"
+                )
+        
+        if tvdb_info and tvdb_info.get('tvdb_id'):
+            # 提取ID中的数字部分（如果格式为 'series-443536'，只保留 '443536'）
+            raw_id = tvdb_info['tvdb_id']
+            if '-' in raw_id:
+                platform_id = raw_id.split('-')[-1]  # 取最后一个'-'后面的部分
+            else:
+                platform_id = raw_id
+            
+            await update.message.reply_text(
+                f"✅ **TVDB查询成功**\n\n"
+                f"📋 ID: {platform_id}\n"
+                f"🎬 名称: {tvdb_info.get('name', 'N/A')}\n"
+                f"🎭 类型: {type_name}\n\n"
+                f"✅ 自动使用检测到的类型进行导入..."
+            )
+            
+            # 保存解析结果
+            context.user_data["import_auto_id"] = platform_id
+            context.user_data["import_auto_media_type"] = auto_detected_type
+            
+            if auto_detected_type == "movie":
+                # 电影类型：直接导入
+                import_params = {
+                    "searchType": search_type,
+                    "searchTerm": platform_id,
+                    "mediaType": auto_detected_type,
+                    "importMethod": "auto"
+                }
+                await call_import_auto_api(update, context, import_params)
+                return ConversationHandler.END
+            else:
+                # 电视剧类型：显示导入方式选择
+                context.user_data["import_auto_params"] = {
+                    "searchType": search_type,
+                    "searchTerm": platform_id,
+                    "mediaType": auto_detected_type
+                }
+                
+                await show_import_options(update, context, context.user_data["import_auto_params"])
+                return IMPORT_AUTO_METHOD_SELECTION
+        else:
+            # 记录详细的错误信息用于调试
+            logger.error(f"TVDB查询失败: slug='{slug}', media_type='{auto_detected_type}', tvdb_info={tvdb_info}")
+            
+            await update.message.reply_text(
+                f"❌ **TVDB查询失败**\n\n"
+                f"无法找到slug '{slug}' 对应的媒体信息，请检查链接是否正确。\n\n"
+                f"💡 **可能的原因:**\n"
+                f"• TVDB API暂时不可用\n"
+                f"• 网络连接问题\n"
+                f"• 该内容在TVDB中不存在\n\n"
+                f"🔄 **建议:**\n"
+                f"• 稍后重试\n"
+                f"• 使用TMDB链接或关键词搜索"
+            )
+            return ConversationHandler.END
         
     elif input_type in ["tt_id", "keyword"] or search_type != "tmdb":
         # 纯ID、关键词或非TMDB搜索：直接使用

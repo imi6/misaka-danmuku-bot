@@ -45,6 +45,50 @@ def is_tmdb_url(text: str) -> bool:
     """
     return parse_tmdb_url(text) is not None
 
+def parse_tvdb_url(url: str) -> Optional[Dict[str, Any]]:
+    """解析 TVDB URL，提取媒体类型和 slug
+    
+    Args:
+        url: TVDB URL，如 https://www.thetvdb.com/series/san-da-dui
+        
+    Returns:
+        Dict 包含 media_type 和 slug，如果解析失败返回 None
+        
+    Examples:
+        parse_tvdb_url("https://www.thetvdb.com/series/san-da-dui")
+        # 返回: {"media_type": "tv_series", "slug": "san-da-dui"}
+        
+        parse_tvdb_url("https://www.thetvdb.com/movies/san-da-dui")
+        # 返回: {"media_type": "movie", "slug": "san-da-dui"}
+    """
+    # TVDB URL 正则表达式
+    tvdb_pattern = r'https?://(?:www\.)?thetvdb\.com/(series|movies)/([^/?]+)(?:\?.*)?$'
+    
+    match = re.match(tvdb_pattern, url.strip())
+    if not match:
+        return None
+    
+    media_type_raw, slug = match.groups()
+    
+    # 转换媒体类型
+    media_type = "tv_series" if media_type_raw == "series" else "movie"
+    
+    return {
+        "media_type": media_type,
+        "slug": slug
+    }
+
+def is_tvdb_url(text: str) -> bool:
+    """检查文本是否为 TVDB URL
+    
+    Args:
+        text: 要检查的文本
+        
+    Returns:
+        bool: 如果是 TVDB URL 返回 True，否则返回 False
+    """
+    return parse_tvdb_url(text) is not None
+
 def is_tt_id(text: str) -> bool:
     """检查文本是否为 tt 开头的 ID 格式（如 tt525553）
     
@@ -69,6 +113,9 @@ def determine_input_type(text: str) -> Dict[str, Any]:
         determine_input_type("https://www.themoviedb.org/tv/292575")
         # 返回: {"type": "tmdb_url", "media_type": "tv_series", "tmdb_id": "292575"}
         
+        determine_input_type("https://www.thetvdb.com/series/san-da-dui")
+        # 返回: {"type": "tvdb_url", "media_type": "tv_series", "slug": "san-da-dui"}
+        
         determine_input_type("tt525553")
         # 返回: {"type": "tt_id", "value": "tt525553"}
         
@@ -84,6 +131,15 @@ def determine_input_type(text: str) -> Dict[str, Any]:
             "type": "tmdb_url",
             "media_type": tmdb_info["media_type"],
             "tmdb_id": tmdb_info["tmdb_id"]
+        }
+    
+    # 检查是否为 TVDB URL
+    tvdb_info = parse_tvdb_url(text)
+    if tvdb_info:
+        return {
+            "type": "tvdb_url",
+            "media_type": tvdb_info["media_type"],
+            "slug": tvdb_info["slug"]
         }
     
     # 检查是否为 tt 开头的 ID
