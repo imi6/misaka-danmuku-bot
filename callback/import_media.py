@@ -114,22 +114,13 @@ async def handle_search_type_selection(update: Update, context: ContextTypes.DEF
     context.user_data["import_auto_search_type"] = search_type
     
     if search_type == "keyword":
-        # 关键词搜索需要先选择媒体类型
-        keyboard = [
-            [InlineKeyboardButton("📺 电视剧/动漫", callback_data=json.dumps({"action": "import_auto_media_type", "type": "tv_series"}, ensure_ascii=False))],
-            [InlineKeyboardButton("🎬 电影", callback_data=json.dumps({"action": "import_auto_media_type", "type": "movie"}, ensure_ascii=False))]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
+        # 关键词搜索：直接提示输入关键词
         await query.edit_message_text(
-            "🔍 **关键词搜索**\n\n请选择媒体类型：",
-            reply_markup=reply_markup,
-            parse_mode="Markdown"
+            "🔍 **关键词搜索**\n\n请输入搜索关键词："
         )
-        # 返回状态2，等待媒体类型选择或关键词输入
         return IMPORT_AUTO_KEYWORD_INPUT
     else:
-        # 其他搜索类型需要先选择媒体类型
+        # 平台ID搜索：直接提示输入ID
         platform_names = {
             "tmdb": "TMDB",
             "tvdb": "TVDB", 
@@ -139,20 +130,11 @@ async def handle_search_type_selection(update: Update, context: ContextTypes.DEF
         }
         platform_name = platform_names.get(search_type, search_type.upper())
         
-        keyboard = [
-            [InlineKeyboardButton("📺 电视剧/动漫", callback_data=json.dumps({"action": "import_auto_media_type", "type": "tv_series"}, ensure_ascii=False))],
-            [InlineKeyboardButton("🎬 电影", callback_data=json.dumps({"action": "import_auto_media_type", "type": "movie"}, ensure_ascii=False))]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
         await query.edit_message_text(
-            f"🆔 **{platform_name} ID搜索**\n\n请选择媒体类型：",
-            reply_markup=reply_markup,
-            parse_mode="Markdown"
+            f"🆔 **{platform_name} ID搜索**\n\n请输入{platform_name} ID或链接："
         )
         
-        # 返回状态2，等待媒体类型选择
-        return IMPORT_AUTO_KEYWORD_INPUT
+        return IMPORT_AUTO_ID_INPUT
 
 
 async def handle_media_type_selection(update: Update, context: ContextTypes.DEFAULT_TYPE, callback_data: dict):
@@ -169,47 +151,93 @@ async def handle_media_type_selection(update: Update, context: ContextTypes.DEFA
     # 检查是否已有关键词（来自 /search 命令）
     existing_keyword = context.user_data.get("import_auto_keyword")
     if existing_keyword:
-        # 已有关键词，直接进入导入选项
-        await query.edit_message_text(
-            f"✅ 已选择：{type_name}\n关键词：{existing_keyword}\n\n请选择导入方式："
-        )
-        
-        # 保存导入参数
-        context.user_data["import_auto_params"] = {
-            "searchType": "keyword",
-            "searchTerm": existing_keyword,
-            "mediaType": media_type
-        }
-        
-        # 显示导入方式选择
-        from handlers.import_media import show_import_options
-        await show_import_options(update, context, context.user_data["import_auto_params"])
-        return IMPORT_AUTO_METHOD_SELECTION
+        # 已有关键词，根据媒体类型决定流程
+        if media_type == "movie":
+            # 电影类型：直接导入
+            await query.edit_message_text(
+                f"✅ 已选择：{type_name}\n关键词：{existing_keyword}\n\n🎬 正在导入电影..."
+            )
+            
+            import_params = {
+                "searchType": "keyword",
+                "searchTerm": existing_keyword,
+                "mediaType": media_type,
+                "importMethod": "auto"
+            }
+            
+            from handlers.import_media import call_import_auto_api
+            await call_import_auto_api(update, context, import_params)
+            return ConversationHandler.END
+        else:
+            # 电视剧类型：显示导入方式选择
+            await query.edit_message_text(
+                f"✅ 已选择：{type_name}\n关键词：{existing_keyword}\n\n请选择导入方式："
+            )
+            
+            # 保存导入参数
+            context.user_data["import_auto_params"] = {
+                "searchType": "keyword",
+                "searchTerm": existing_keyword,
+                "mediaType": media_type
+            }
+            
+            # 显示导入方式选择
+            from handlers.import_media import show_import_options
+            await show_import_options(update, context, context.user_data["import_auto_params"])
+            return IMPORT_AUTO_METHOD_SELECTION
     
-    # 根据搜索类型决定下一步操作
-    search_type = context.user_data.get("import_auto_search_type", "keyword")
-    
-    if search_type == "keyword":
-        # 关键词搜索：提示输入关键词
-        await query.edit_message_text(
-            f"📝 **{type_name}关键词搜索**\n\n请输入搜索关键词："
-        )
-        return IMPORT_AUTO_KEYWORD_INPUT
-    else:
-        # 平台ID搜索：提示输入ID
-        platform_names = {
-            "tmdb": "TMDB",
-            "tvdb": "TVDB", 
-            "douban": "豆瓣",
-            "imdb": "IMDB",
-            "bangumi": "Bangumi"
-        }
-        platform_name = platform_names.get(search_type, search_type.upper())
+    # 检查是否已有平台ID
+    existing_id = context.user_data.get("import_auto_id")
+    if existing_id:
+        # 已有平台ID，根据媒体类型决定流程
+        search_type = context.user_data.get("import_auto_search_type", "tmdb")
+        auto_detected_type = context.user_data.get("import_auto_media_type")
         
-        await query.edit_message_text(
-            f"🆔 **{type_name} {platform_name} ID搜索**\n\n请输入{platform_name} ID："
-        )
-        return IMPORT_AUTO_ID_INPUT
+        # 检查是否与自动检测的类型不一致
+        if auto_detected_type and auto_detected_type != media_type:
+            detected_name = "电影" if auto_detected_type == "movie" else "电视剧/动漫"
+            await query.edit_message_text(
+                f"⚠️ **类型不一致提醒**\n\n"
+                f"🔍 自动检测: {detected_name}\n"
+                f"👤 用户选择: {type_name}\n\n"
+                f"将按用户选择的类型进行导入。\n\n"
+                f"{'🎬 正在导入电影...' if media_type == 'movie' else '请选择导入方式：'}"
+            )
+        else:
+            await query.edit_message_text(
+                f"✅ 已选择：{type_name}\nID：{existing_id}\n\n"
+                f"{'🎬 正在导入电影...' if media_type == 'movie' else '请选择导入方式：'}"
+            )
+        
+        if media_type == "movie":
+            # 电影类型：直接导入
+            import_params = {
+                "searchType": search_type,
+                "searchTerm": existing_id,
+                "mediaType": media_type,
+                "importMethod": "auto"
+            }
+            
+            from handlers.import_media import call_import_auto_api
+            await call_import_auto_api(update, context, import_params)
+            return ConversationHandler.END
+        else:
+            # 电视剧类型：显示导入方式选择
+            context.user_data["import_auto_params"] = {
+                "searchType": search_type,
+                "searchTerm": existing_id,
+                "mediaType": media_type
+            }
+            
+            from handlers.import_media import show_import_options
+            await show_import_options(update, context, context.user_data["import_auto_params"])
+            return IMPORT_AUTO_METHOD_SELECTION
+    
+    # 既没有关键词也没有ID，这种情况不应该发生
+    await query.edit_message_text(
+        "❌ 系统错误：缺少搜索内容，请重新开始。"
+    )
+    return ConversationHandler.END
 
 
 async def handle_search_type_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):

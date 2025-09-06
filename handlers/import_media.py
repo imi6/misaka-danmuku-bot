@@ -286,64 +286,171 @@ async def import_auto_keyword_input(update: Update, context: ContextTypes.DEFAUL
         await update.message.reply_text("❌ 关键词不能为空，请重新输入：")
         return IMPORT_AUTO_KEYWORD_INPUT
     
-    # 保存关键词和媒体类型到上下文
+    # 保存关键词到上下文
     context.user_data["import_auto_keyword"] = keyword
-    media_type = context.user_data.get("import_auto_media_type", "tv")
     
-    # 根据媒体类型决定流程
-    if media_type == "movie":
-        # 电影类型：直接导入
-        await update.message.reply_text("🎬 电影导入\n\n正在导入电影...")
-        import_params = {
-            "searchType": "keyword",
-            "searchTerm": keyword,
-            "mediaType": media_type,
-            "importMethod": "auto"
-        }
-        await call_import_auto_api(update, context, import_params)
-        return ConversationHandler.END
+    # 检查TMDB是否启用
+    from config import TMDB_ENABLED
+    
+    if TMDB_ENABLED:
+        await update.message.reply_text(f"🔍 关键词搜索: {keyword}\n\n正在使用TMDB辅助搜索...")
+        
+        # 尝试TMDB辅助搜索
+        suggested_type = get_media_type_suggestion(keyword)
+        tmdb_info = format_tmdb_results_info(keyword)
     else:
-        # 电视剧类型：显示导入方式选择
-        await show_import_options(update, context, {
-            "searchType": "keyword",
-            "searchTerm": keyword,
-            "mediaType": media_type
-        })
-        return IMPORT_AUTO_METHOD_SELECTION
+        await update.message.reply_text(f"🔍 关键词搜索: {keyword}\n\nℹ️ 未配置TMDB API Key，将跳过TMDB辅助搜索")
+        suggested_type = None
+        tmdb_info = None
+    
+    if suggested_type:
+        # TMDB建议了明确的类型，直接使用
+        type_name = "电视剧/动漫" if suggested_type == "tv_series" else "电影"
+        
+        if suggested_type == "movie":
+            # 电影类型：直接导入
+            await update.message.reply_text(
+                f"🎯 **TMDB智能识别**\n\n{tmdb_info}\n\n✅ 自动选择类型：{type_name}\n\n🎬 正在导入电影...",
+                parse_mode="Markdown"
+            )
+            
+            import_params = {
+                "searchType": "keyword",
+                "searchTerm": keyword,
+                "mediaType": suggested_type,
+                "importMethod": "auto"
+            }
+            await call_import_auto_api(update, context, import_params)
+            return ConversationHandler.END
+        else:
+            # 电视剧类型：显示导入方式选择
+            await update.message.reply_text(
+                f"🎯 **TMDB智能识别**\n\n{tmdb_info}\n\n✅ 自动选择类型：{type_name}\n\n请选择导入方式：",
+                parse_mode="Markdown"
+            )
+            
+            # 保存导入参数
+            context.user_data["import_auto_media_type"] = suggested_type
+            context.user_data["import_auto_params"] = {
+                "searchType": "keyword",
+                "searchTerm": keyword,
+                "mediaType": suggested_type
+            }
+            
+            # 直接显示导入方式选择
+            await show_import_options(update, context, context.user_data["import_auto_params"])
+            return IMPORT_AUTO_METHOD_SELECTION
+    else:
+        # TMDB无法确定类型或未启用，显示手动选择
+        message_text = f"🔍 **关键词搜索: {keyword}**\n\n"
+        
+        if tmdb_info is None:
+            # TMDB未启用
+            message_text += "❓ 请手动选择媒体类型：\n\n"
+        elif tmdb_info != "🔍 TMDB未找到相关结果":
+            # TMDB启用但类型混合
+            message_text += f"{tmdb_info}\n\n⚠️ 类型混合，请手动选择：\n\n"
+        else:
+            # TMDB启用但未找到结果
+            message_text += f"{tmdb_info}\n\n❓ 未找到TMDB数据，请手动选择媒体类型：\n\n"
+        
+        keyboard = [
+            [InlineKeyboardButton("📺 电视剧/动漫", callback_data=json.dumps({"action": "import_auto_media_type", "type": "tv_series"}, ensure_ascii=False))],
+            [InlineKeyboardButton("🎬 电影", callback_data=json.dumps({"action": "import_auto_media_type", "type": "movie"}, ensure_ascii=False))]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(
+            message_text,
+            reply_markup=reply_markup,
+            parse_mode="Markdown"
+        )
+        return 2  # 等待媒体类型选择
 
 
 async def import_auto_id_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """接收用户输入的平台ID"""
-    platform_id = update.message.text.strip()
-    if not platform_id:
-        await update.message.reply_text("❌ ID不能为空，请重新输入：")
+    """接收用户输入的平台ID或链接"""
+    user_input = update.message.text.strip()
+    if not user_input:
+        await update.message.reply_text("❌ 输入不能为空，请重新输入：")
         return IMPORT_AUTO_ID_INPUT
     
-    # 保存ID和搜索类型到上下文
-    context.user_data["import_auto_id"] = platform_id
     search_type = context.user_data.get("import_auto_search_type", "tmdb")
-    media_type = context.user_data.get("import_auto_media_type", "tv_series")
     
-    # 根据媒体类型决定流程
-    if media_type == "movie":
-        # 电影类型：直接导入
-        await update.message.reply_text("🎬 电影导入\n\n正在导入电影...")
-        import_params = {
-            "searchType": search_type,
-            "searchTerm": platform_id,
-            "mediaType": media_type,
-            "importMethod": "auto"
-        }
-        await call_import_auto_api(update, context, import_params)
-        return ConversationHandler.END
+    # 解析输入类型
+    result = determine_input_type(user_input)
+    input_type = result.get('type')
+    
+    # 根据输入类型处理
+    if input_type == "tmdb_url" and search_type == "tmdb":
+        # TMDB链接：使用解析出的ID和媒体类型
+        platform_id = result['tmdb_id']
+        auto_detected_type = result['media_type']
+        type_name = '电影' if auto_detected_type == 'movie' else '电视剧/动漫'
+        
+        await update.message.reply_text(
+            f"🔗 **TMDB链接解析成功**\n\n"
+            f"📋 ID: {platform_id}\n"
+            f"🎭 检测到类型: {type_name}\n\n"
+            f"✅ 自动使用检测到的类型进行导入..."
+        )
+        
+        # 保存解析结果
+        context.user_data["import_auto_id"] = platform_id
+        context.user_data["import_auto_media_type"] = auto_detected_type
+        
+        if auto_detected_type == "movie":
+            # 电影类型：直接导入
+            import_params = {
+                "searchType": search_type,
+                "searchTerm": platform_id,
+                "mediaType": auto_detected_type,
+                "importMethod": "auto"
+            }
+            await call_import_auto_api(update, context, import_params)
+            return ConversationHandler.END
+        else:
+            # 电视剧类型：显示导入方式选择
+            context.user_data["import_auto_params"] = {
+                "searchType": search_type,
+                "searchTerm": platform_id,
+                "mediaType": auto_detected_type
+            }
+            
+            await show_import_options(update, context, context.user_data["import_auto_params"])
+            return IMPORT_AUTO_METHOD_SELECTION
+        
+    elif input_type in ["tt_id", "keyword"] or search_type != "tmdb":
+        # 纯ID、关键词或非TMDB搜索：直接使用
+        platform_id = result.get('value', user_input)
+        context.user_data["import_auto_id"] = platform_id
+        
+        await update.message.reply_text(
+            f"🆔 **平台ID: {platform_id}**\n\n请选择媒体类型："
+        )
+        
     else:
-        # 电视剧类型：显示导入方式选择
-        await show_import_options(update, context, {
-            "searchType": search_type,
-            "searchTerm": platform_id,
-            "mediaType": media_type
-        })
-        return IMPORT_AUTO_METHOD_SELECTION
+        # 其他情况：直接使用输入
+        platform_id = user_input
+        context.user_data["import_auto_id"] = platform_id
+        
+        await update.message.reply_text(
+            f"🆔 **平台ID: {platform_id}**\n\n请选择媒体类型："
+        )
+    
+    # 显示媒体类型选择按钮
+    keyboard = [
+        [InlineKeyboardButton("📺 电视剧/动漫", callback_data=json.dumps({"action": "import_auto_media_type", "type": "tv_series"}, ensure_ascii=False))],
+        [InlineKeyboardButton("🎬 电影", callback_data=json.dumps({"action": "import_auto_media_type", "type": "movie"}, ensure_ascii=False))]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text(
+        "请选择媒体类型：",
+        reply_markup=reply_markup
+    )
+    
+    return IMPORT_AUTO_ID_INPUT  # 等待媒体类型选择
 
 
 async def import_auto_season_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
