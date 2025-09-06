@@ -231,6 +231,7 @@ async def _setup_bot_commands(application: Application):
         BotCommand("auto", "自动导入媒体"),
         BotCommand("search", "搜索媒体内容"),
         BotCommand("url", "URL导入视频"),
+        BotCommand("refresh", "刷新数据源"),
         BotCommand("tokens", "管理API令牌"),
         BotCommand("help", "查看帮助信息"),
         BotCommand("cancel", "取消当前操作")
@@ -322,13 +323,17 @@ def _setup_handlers(application, handlers_module, callback_module):
     episode_input_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(
             _wrap_conversation_entry_point(handle_get_episode_callback),
-            pattern=r'{"(action|a)": "start_input_range".*}'
-        )],  # 通过"输入集数区间"回调按钮触发
+            pattern=r'{"(action|a)": "(start_input_range|get_episodes|get_media_episode|switch_episode_page)".*}'
+        )],  # 通过"输入集数区间"回调按钮、"获取分集"按钮或分页按钮触发
         states={
             1: [
                 MessageHandler(  # INPUT_EPISODE_RANGE = 1
                     filters.TEXT & ~filters.COMMAND,
                     _wrap_with_session_management(handle_episode_range_input)
+                ),
+                CallbackQueryHandler(  # 处理分页按钮回调
+                    _wrap_with_session_management(handle_get_episode_callback),
+                    pattern=r'^.*"switch_episode_page".*$'
                 )
             ],
         },
@@ -456,6 +461,21 @@ def _setup_handlers(application, handlers_module, callback_module):
     token_management_handler = create_token_management_handler()
     application.add_handler(token_management_handler)
     current_handlers["token_management_handler"] = token_management_handler
+    
+    # 导入并注册refresh处理器
+    from handlers.refresh_sources import create_refresh_handler
+    refresh_handler = create_refresh_handler()
+    application.add_handler(refresh_handler)
+    current_handlers["refresh_handler"] = refresh_handler
+    
+    # 导入并注册refresh回调处理器
+    from callback.refresh_sources import handle_refresh_callback_query
+    refresh_callback_handler = CallbackQueryHandler(
+        _wrap_with_session_management(handle_refresh_callback_query),
+        pattern=r'refresh_(full|episode)_.*'
+    )
+    application.add_handler(refresh_callback_handler)
+    current_handlers["refresh_callback_handler"] = refresh_callback_handler
 
 
 async def init_bot() -> Application:

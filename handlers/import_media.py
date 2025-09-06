@@ -20,7 +20,7 @@ CALLBACK_DATA_MAX_LEN = 60
 IMPORT_AUTO_KEYWORD_INPUT = 2  # 关键词输入状态
 IMPORT_AUTO_ID_INPUT = 3  # ID输入状态
 IMPORT_AUTO_SEASON_INPUT = 4  # 季度输入状态
-IMPORT_AUTO_EPISODE_INPUT = 5  # 集数输入状态
+IMPORT_AUTO_EPISODE_INPUT = 5  # 分集输入状态
 IMPORT_AUTO_METHOD_SELECTION = 6  # 导入方式选择状态 
 
 
@@ -30,25 +30,7 @@ async def search_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 1. 直接带参数（如：/search 海贼王）
     if context.args:
         keyword = " ".join(context.args)
-        # 保存关键词到上下文
-        context.user_data["import_auto_keyword"] = keyword
-        
-        # 显示媒体类型选择
-        await update.message.reply_text(
-            f"🔍 搜索关键词：{keyword}\n\n请选择媒体类型："
-        )
-        
-        keyboard = [
-            [InlineKeyboardButton("📺 电视剧/动漫", callback_data=json.dumps({"action": "import_auto_media_type", "type": "tv_series"}, ensure_ascii=False))],
-            [InlineKeyboardButton("🎬 电影", callback_data=json.dumps({"action": "import_auto_media_type", "type": "movie"}, ensure_ascii=False))]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await update.message.reply_text(
-            "请选择媒体类型：",
-            reply_markup=reply_markup
-        )
-        return 2  # 等待媒体类型选择
+        return await process_search_media(update, keyword, context)
 
     # 2. 无参数：引导用户输入关键词
     await update.message.reply_text("请输入要搜索的媒体关键词（如：海贼王、进击的巨人）：")

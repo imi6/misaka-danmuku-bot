@@ -30,9 +30,6 @@ async def handle_token_callback_query(update: Update, context: ContextTypes.DEFA
     
     if callback_data == "add_token":
         return await start_add_token(update, context)
-    elif callback_data == "refresh_tokens":
-        await refresh_tokens_list(update, context)
-        return ConversationHandler.END
     elif callback_data.startswith("toggle_token:"):
         token_id = callback_data.split(":")[1]
         await toggle_token_status(update, context, token_id)
@@ -169,7 +166,6 @@ async def refresh_tokens_list(update: Update, context: ContextTypes.DEFAULT_TYPE
         
         # 添加操作按钮
         keyboard.append([InlineKeyboardButton("➕ 添加Token", callback_data="add_token")])
-        keyboard.append([InlineKeyboardButton("🔄 刷新列表", callback_data="refresh_tokens")])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         message_text = "\n".join(message_lines)

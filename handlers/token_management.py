@@ -71,8 +71,6 @@ async def show_tokens_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # 添加通用操作按钮
         keyboard.append([InlineKeyboardButton("➕ 添加Token", callback_data="add_token")])
-        if tokens:
-            keyboard.append([InlineKeyboardButton("🔄 刷新列表", callback_data="refresh_tokens")])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         
@@ -148,7 +146,7 @@ def create_token_management_handler():
         entry_points=[
             CommandHandler('tokens', show_tokens_list),
             CallbackQueryHandler(handle_token_callback_query, pattern=r'^add_token$'),
-            CallbackQueryHandler(handle_token_callback_query, pattern=r'^(refresh_tokens|toggle_token:|delete_token:|confirm_delete:|cancel_delete)')
+            CallbackQueryHandler(handle_token_callback_query, pattern=r'^(toggle_token:|delete_token:|confirm_delete:|cancel_delete)')
         ],
         states={
             TOKEN_NAME_INPUT: [
@@ -160,7 +158,7 @@ def create_token_management_handler():
         },
         fallbacks=[
             CommandHandler('cancel', cancel_token_operation),
-            CallbackQueryHandler(handle_token_callback_query, pattern=r'^(refresh_tokens|toggle_token:|delete_token:|confirm_delete:|cancel_delete)')
+            CallbackQueryHandler(handle_token_callback_query, pattern=r'^(toggle_token:|delete_token:|confirm_delete:|cancel_delete)')
         ],
         allow_reentry=True
     )

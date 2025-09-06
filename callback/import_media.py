@@ -454,7 +454,11 @@ async def handle_get_episode_callback(update: Update, context: ContextTypes.DEFA
             
             episodes_text = "\n".join(episode_details)
             full_message = f"""✅ 共找到 {len(full_episodes)} 集有效分集 {page_info}
-💡 支持输入格式：1-10 / 1,10 / 1,5-10
+💡 请直接输入集数区间或 all：
+   • 单集：1
+   • 区间：1-10
+   • 多选：1,5,10
+   • 全部：all
 
 📺 分集列表：
 {episodes_text}"""
@@ -500,25 +504,10 @@ async def handle_get_episode_callback(update: Update, context: ContextTypes.DEFA
                 if pagination_buttons:
                     buttons.append(pagination_buttons)
             
-            # 集数输入按钮行
-            input_callback = json.dumps({
-                "a": "start_input_range",
-                "d": data_id
-            }, ensure_ascii=False)
-            if len(input_callback) > CALLBACK_DATA_MAX_LEN:
-                safe_id_len = 29
-                input_callback = json.dumps({
-                    "a": "start_input_range",
-                    "d": data_id[:safe_id_len]
-                }, ensure_ascii=False)
-            buttons.append([InlineKeyboardButton(text="📝 输入集数区间", callback_data=input_callback)])
+            # 不再添加输入按钮和导入按钮，用户可以直接输入
             
-            # 立即导入按钮行
-            import_callback = json.dumps({
-                "action": "import_media",
-                "result_index": result_index
-            }, ensure_ascii=False)
-            buttons.append([InlineKeyboardButton(text="🔗 立即导入全部", callback_data=import_callback)])
+            # 存储当前数据ID供输入处理使用
+            context.user_data["current_data_id"] = data_id
             
             logger.info(f"📤 发送分集列表消息，总集数: {len(full_episodes)}, 当前页: {current_page}/{total_pages}")
             await query.message.reply_text(
@@ -526,7 +515,8 @@ async def handle_get_episode_callback(update: Update, context: ContextTypes.DEFA
                 reply_markup=InlineKeyboardMarkup(buttons) if buttons else None,
                 parse_mode=None
             )
-            logger.info(f"✅ 分集列表消息发送成功")
+            logger.info(f"✅ 分集列表消息发送成功，进入集数输入状态")
+            return INPUT_EPISODE_RANGE
 
         # ------------------------------
         # 4. 分页预览逻辑（使用短ID获取原始数据）
@@ -546,20 +536,34 @@ async def handle_get_episode_callback(update: Update, context: ContextTypes.DEFA
             # 存储当前短ID（供输入处理函数使用）
             context.user_data["current_data_id"] = data_id
             await query.message.reply_text(
-                f"📝 请输入需要导入的集数区间（当前共{total_episodes}集）：\n"
-                f"示例：1-10 / 1,10 / 1,5-10",
-                parse_mode=None
+                f"📝 请输入需要导入的集数（当前共{total_episodes}集）：\n\n"
+                f"💡 **支持格式：**\n"
+                f"• 单个集数：如 `5`\n"
+                f"• 集数区间：如 `1-10` 或 `5,8,12`\n"
+                f"• 全部分集：输入 `all`",
+                parse_mode="Markdown"
             )
             return INPUT_EPISODE_RANGE
 
-        # 处理分页显示逻辑（仅在需要显示分页时执行）
-        elif action in ["switch_episode_page", "get_episodes"]:
+        # 处理get_episodes动作：直接进入输入状态（用户要求的优化）
+        elif action == "get_episodes":
+            logger.info(f"📋 处理获取分集请求，直接进入输入状态")
+            # 存储当前短ID（供输入处理函数使用）
+            context.user_data["current_data_id"] = data_id
+            await query.message.reply_text(
+                f"📝 请输入需要导入的集数（当前共{total_episodes}集）：\n\n"
+                f"💡 **支持格式：**\n"
+                f"• 单个集数：如 `5`\n"
+                f"• 集数区间：如 `1-10` 或 `5,8,12`\n"
+                f"• 全部分集：输入 `all`",
+                parse_mode="Markdown"
+            )
+            return INPUT_EPISODE_RANGE
+        
+        # 处理分页显示逻辑（仅在翻页时执行）
+        elif action == "switch_episode_page":
             logger.info(f"📋 进入分页显示逻辑，action: {action}, data_id: {data_id}")
-            # 处理翻页动作：switch_episode_page
-            if action == "switch_episode_page":
-                logger.info(f"📄 处理翻页请求：切换到第{current_page}页")
-            elif action == "get_episodes":
-                logger.info(f"📋 处理获取分集请求，准备显示分集列表")
+            logger.info(f"📄 处理翻页请求：切换到第{current_page}页")
 
             # 计算分页参数
             total_pages = (total_episodes + EPISODES_PER_PAGE - 1) // EPISODES_PER_PAGE
@@ -626,38 +630,15 @@ async def handle_get_episode_callback(update: Update, context: ContextTypes.DEFA
                 
                 buttons.append(pagination_buttons)
             
-            # 集数输入按钮行
-            input_callback = json.dumps({
-                "a": "start_input_range",
-                "d": data_id
-            }, ensure_ascii=False)
-            if len(input_callback) > CALLBACK_DATA_MAX_LEN:
-                safe_id_len = 29
-                input_callback = json.dumps({
-                    "a": "start_input_range",
-                    "d": data_id[:safe_id_len]
-                }, ensure_ascii=False)
-            buttons.append([InlineKeyboardButton(text="📝 输入集数区间", callback_data=input_callback)])
-            
-            # 立即导入全部按钮行（在所有页面都显示）
-            # 需要获取原始result_index
-            original_result_index = current_data.get("result_index", 0)
-            import_callback = json.dumps({
-                "action": "import_media",
-                "result_index": original_result_index
-            }, ensure_ascii=False)
-            
-            # 分集导入按钮
-            episode_import_callback = json.dumps({
-                "action": "get_media_episode",
-                "result_index": original_result_index
-            }, ensure_ascii=False)
-            
-            # 添加立即导入按钮
-            buttons.append([InlineKeyboardButton(text="🔗 立即导入全部", callback_data=import_callback)])
+            # 移除输入集数区间和立即导入全部按钮（用户要求的优化）
+            # 分页显示时只保留分页按钮，用户可直接输入集数
             
             full_message = f"""✅ 共找到 {total_episodes} 集有效分集 {page_info}
-💡 支持输入格式：1-10 / 1,10 / 1,5-10
+
+💡 **支持输入格式：**
+• 单个集数：如 `5`
+• 集数区间：如 `1-10` 或 `5,8,12`
+• 全部分集：输入 `all`
 
 📺 分集列表：
 {episodes_text}"""
@@ -671,6 +652,9 @@ async def handle_get_episode_callback(update: Update, context: ContextTypes.DEFA
                 parse_mode=None
             )
             logger.info(f"✅ 分集列表消息和按钮发送成功")
+            # 保持会话状态，允许用户直接输入集数
+            context.user_data["current_data_id"] = data_id
+            return INPUT_EPISODE_RANGE
 
     except BadRequest as e:
         # 捕获Telegram按钮相关错误（如Button_data_invalid）
@@ -730,56 +714,67 @@ async def handle_episode_range_input(update: Update, context: ContextTypes.DEFAU
         await update.message.reply_text("❌ 数据已过期，请重新获取分集")
         return ConversationHandler.END
 
-    # 解析集数（逻辑不变，仅数据来源改为短ID映射）
+    # 解析集数（支持all选项）
     episode_index_map = {ep["episodeIndex"]: ep for ep in full_episodes}
     valid_episode_indices = set(episode_index_map.keys())
-    range_segments = [seg.strip() for seg in user_input.split(",") if seg.strip()]
+    
+    # 检查是否为全部导入
+    if user_input.lower() == 'all':
+        selected_indices = valid_episode_indices
+        await update.message.reply_text(
+            f"✅ 已选择导入全部 {len(selected_indices)} 集\n"
+            f"💡 即将开始导入"
+        )
+    else:
+        range_segments = [seg.strip() for seg in user_input.split(",") if seg.strip()]
 
-    if not range_segments:
-        await update.message.reply_text("❌ 输入为空，请重新输入（示例：1-10 / 1,10）")
-        return INPUT_EPISODE_RANGE
+        if not range_segments:
+            await update.message.reply_text("❌ 输入为空，请重新输入\n💡 支持格式：\n• 单个集数：如 5\n• 集数区间：如 1-10 或 5,8,12\n• 全部分集：输入 all")
+            return INPUT_EPISODE_RANGE
 
-    selected_indices = set()
-    invalid_segments = []
-    for seg in range_segments:
-        if "-" in seg:
-            try:
-                start, end = map(int, [s.strip() for s in seg.split("-", 1)])
-                if start > end:
-                    start, end = end, start
-                segment_indices = set(range(start, end + 1))
-            except (ValueError, IndexError):
-                invalid_segments.append(seg)
-                continue
-        else:
-            try:
-                segment_indices = {int(seg)}
-            except ValueError:
-                invalid_segments.append(seg)
-                continue
+        selected_indices = set()
+        invalid_segments = []
+        for seg in range_segments:
+            if "-" in seg:
+                try:
+                    start, end = map(int, [s.strip() for s in seg.split("-", 1)])
+                    if start > end:
+                        start, end = end, start
+                    segment_indices = set(range(start, end + 1))
+                except (ValueError, IndexError):
+                    invalid_segments.append(seg)
+                    continue
+            else:
+                try:
+                    segment_indices = {int(seg)}
+                except ValueError:
+                    invalid_segments.append(seg)
+                    continue
 
-        valid_in_segment = segment_indices & valid_episode_indices
-        selected_indices.update(valid_in_segment)
-        invalid_in_segment = segment_indices - valid_episode_indices
-        if invalid_in_segment:
-            invalid_segments.append(f"{seg}（无效集数：{sorted(invalid_in_segment)}）")
-        
-    if not selected_indices:
-        msg = "❌ 未找到有效集数，请重新输入\n"
-        if invalid_segments:
-            msg += f"无效片段：{', '.join(invalid_segments)}\n"
-        msg += f"当前支持集数：1-{total_episodes}"
-        await update.message.reply_text(msg)
-        return INPUT_EPISODE_RANGE
+            valid_in_segment = segment_indices & valid_episode_indices
+            selected_indices.update(valid_in_segment)
+            invalid_in_segment = segment_indices - valid_episode_indices
+            if invalid_in_segment:
+                invalid_segments.append(f"{seg}（无效集数：{sorted(invalid_in_segment)}）")
+            
+        if not selected_indices:
+            msg = "❌ 未找到有效集数，请重新输入\n"
+            if invalid_segments:
+                msg += f"无效片段：{', '.join(invalid_segments)}\n"
+            msg += f"当前支持集数：1-{total_episodes}\n💡 支持格式：\n• 单个集数：如 5\n• 集数区间：如 1-10 或 5,8,12\n• 全部分集：输入 all"
+            await update.message.reply_text(msg)
+            return INPUT_EPISODE_RANGE
 
-    # 显示选中结果 + 准备导入
+        # 显示选中结果
+        sorted_indices = sorted(selected_indices)
+        await update.message.reply_text(
+            f"✅ 共选中 {len(sorted_indices)} 集：\n"
+            f"选中集数：{', '.join(map(str, sorted_indices))}\n"
+            f"💡 即将开始导入"
+        )
+
+    # 准备导入
     sorted_indices = sorted(selected_indices)
-    await update.message.reply_text(
-        f"✅ 共选中 {len(sorted_indices)} 集：\n"
-        f"选中集数：{', '.join(map(str, sorted_indices))}\n"
-        f"💡 即将开始导入",
-        parse_mode=None
-    )
 
     # 调用/import/edited接口导入选中的集数
     try:
