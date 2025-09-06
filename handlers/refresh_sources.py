@@ -22,11 +22,18 @@ async def refresh_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['refresh_keyword'] = keyword
         return await process_refresh_search(update, context, keyword)
     else:
-        # 无参数，提示输入关键词
+        # 无参数，提示输入关键词并提供从弹幕库选择的选项
+        keyboard = [
+            [InlineKeyboardButton("📚 从弹幕库中选择", callback_data="refresh_from_library")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
         await update.message.reply_text(
             "🔄 **数据源刷新**\n\n"
-            "请输入要刷新的影视关键词：",
-            parse_mode='Markdown'
+            "请输入要刷新的影视关键词：\n\n"
+            "💡 或者点击下方按钮从弹幕库中选择",
+            parse_mode='Markdown',
+            reply_markup=reply_markup
         )
         return REFRESH_KEYWORD_INPUT
 
@@ -457,6 +464,84 @@ async def cancel_refresh(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ 刷新操作已取消")
     return ConversationHandler.END
 
+async def handle_refresh_from_library(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """处理从弹幕库中选择的回调"""
+    query = update.callback_query
+    await query.answer()
+    
+    try:
+        # 获取库数据
+        library_data = await get_library_data()
+        if not library_data:
+            await query.edit_message_text("❌ 获取弹幕库数据失败，请稍后重试")
+            return ConversationHandler.END
+        
+        # 显示库列表供选择
+        return await show_library_selection(update, context, library_data)
+        
+    except Exception as e:
+        logger.error(f"处理弹幕库选择时发生错误: {e}")
+        await query.edit_message_text("❌ 获取弹幕库数据时发生错误，请稍后重试")
+        return ConversationHandler.END
+
+async def show_library_selection(update: Update, context: ContextTypes.DEFAULT_TYPE, library_data, page=0):
+    """显示弹幕库列表供选择"""
+    items_per_page = 10
+    total_items = len(library_data)
+    total_pages = (total_items + items_per_page - 1) // items_per_page
+    
+    start_idx = page * items_per_page
+    end_idx = min(start_idx + items_per_page, total_items)
+    page_items = library_data[start_idx:end_idx]
+    
+    # 构建消息文本
+    message_text = f"📚 **弹幕库列表** (第 {page + 1}/{total_pages} 页)\n\n"
+    
+    # 构建按钮
+    keyboard = []
+    for i, anime in enumerate(page_items):
+        title = anime.get('title', '未知标题')
+        # 限制标题长度避免按钮过长
+        if len(title) > 25:
+            title = title[:22] + "..."
+        
+        callback_data = f"refresh_select_anime_{start_idx + i}"
+        keyboard.append([InlineKeyboardButton(title, callback_data=callback_data)])
+    
+    # 添加分页按钮
+    nav_buttons = []
+    if page > 0:
+        nav_buttons.append(InlineKeyboardButton("⬅️ 上一页", callback_data=f"refresh_library_page_{page - 1}"))
+    if page < total_pages - 1:
+        nav_buttons.append(InlineKeyboardButton("➡️ 下一页", callback_data=f"refresh_library_page_{page + 1}"))
+    
+    if nav_buttons:
+        keyboard.append(nav_buttons)
+    
+    # 添加取消按钮
+    keyboard.append([InlineKeyboardButton("❌ 取消", callback_data="refresh_cancel")])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    # 保存库数据到上下文
+    context.user_data['refresh_library_data'] = library_data
+    
+    query = update.callback_query
+    if query:
+        await query.edit_message_text(
+            text=message_text,
+            parse_mode='Markdown',
+            reply_markup=reply_markup
+        )
+    else:
+        await update.message.reply_text(
+            text=message_text,
+            parse_mode='Markdown',
+            reply_markup=reply_markup
+        )
+    
+    return REFRESH_ANIME_SELECT
+
 def create_refresh_handler():
     """创建刷新命令处理器"""
     from callback.refresh_sources import handle_refresh_callback_query
@@ -467,10 +552,14 @@ def create_refresh_handler():
         ],
         states={
             REFRESH_KEYWORD_INPUT: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_refresh_keyword_input)
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_refresh_keyword_input),
+                CallbackQueryHandler(handle_refresh_from_library, pattern='^refresh_from_library$')
             ],
             REFRESH_ANIME_SELECT: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_refresh_anime_selection)
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_refresh_anime_selection),
+                CallbackQueryHandler(handle_refresh_callback_query, pattern=r'^refresh_select_anime_\d+$'),
+                CallbackQueryHandler(handle_refresh_callback_query, pattern=r'^refresh_library_page_\d+$'),
+                CallbackQueryHandler(handle_refresh_callback_query, pattern='^refresh_cancel$')
             ],
             REFRESH_SOURCE_SELECT: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_refresh_source_selection)
