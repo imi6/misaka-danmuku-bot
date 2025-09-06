@@ -6,6 +6,7 @@ from telegram.ext import ContextTypes, ConversationHandler
 from utils.api import call_danmaku_api
 from utils.permission import check_user_permission
 from utils.url_parser import determine_input_type
+from utils.tmdb_api import get_media_type_suggestion, format_tmdb_results_info
 
 # 初始化日志
 logger = logging.getLogger(__name__)
@@ -209,26 +210,73 @@ async def process_auto_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
         return 2  # 等待媒体类型选择
     
     else:
-        # 关键词搜索：默认为电视剧
+        # 关键词搜索：检查是否启用TMDB辅助搜索
         keyword = input_info["value"]
         
-        await update.message.reply_text(f"🔍 关键词搜索: {keyword}\n\n请选择媒体类型：")
-        
-        # 显示媒体类型选择
+        # 保存搜索类型和关键词
         context.user_data["import_auto_search_type"] = "keyword"
         context.user_data["import_auto_keyword"] = keyword
         
-        keyboard = [
-            [InlineKeyboardButton("📺 电视剧", callback_data=json.dumps({"action": "import_auto_media_type", "type": "tv_series"}, ensure_ascii=False))],
-            [InlineKeyboardButton("🎬 电影", callback_data=json.dumps({"action": "import_auto_media_type", "type": "movie"}, ensure_ascii=False))]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        # 检查TMDB是否启用
+        from config import TMDB_ENABLED
         
-        await update.message.reply_text(
-            "请选择媒体类型：",
-            reply_markup=reply_markup
-        )
-        return 2  # 等待媒体类型选择
+        if TMDB_ENABLED:
+            await update.message.reply_text(f"🔍 关键词搜索: {keyword}\n\n正在使用TMDB辅助搜索...")
+            
+            # 尝试TMDB辅助搜索
+            suggested_type = get_media_type_suggestion(keyword)
+            tmdb_info = format_tmdb_results_info(keyword)
+        else:
+            await update.message.reply_text(f"🔍 关键词搜索: {keyword}\n\nℹ️ 未配置TMDB API Key，将跳过TMDB辅助搜索")
+            suggested_type = None
+            tmdb_info = None
+        
+        if suggested_type:
+            # TMDB建议了明确的类型，直接使用
+            type_name = "电视剧/动漫" if suggested_type == "tv_series" else "电影"
+            
+            await update.message.reply_text(
+                f"🎯 **TMDB智能识别**\n\n{tmdb_info}\n\n✅ 自动选择类型：{type_name}\n\n请选择导入方式：",
+                parse_mode="Markdown"
+            )
+            
+            # 保存导入参数
+            context.user_data["import_auto_media_type"] = suggested_type
+            context.user_data["import_auto_params"] = {
+                "searchType": "keyword",
+                "searchTerm": keyword,
+                "mediaType": suggested_type
+            }
+            
+            # 直接显示导入方式选择
+            await show_import_options(update, context, context.user_data["import_auto_params"])
+            return IMPORT_AUTO_METHOD_SELECTION
+        else:
+            # TMDB无法确定类型或未启用，显示手动选择
+            message_text = f"🔍 **关键词搜索: {keyword}**\n\n"
+            
+            if tmdb_info is None:
+                # TMDB未启用
+                message_text += "❓ 请手动选择媒体类型：\n\n"
+            elif tmdb_info != "🔍 TMDB未找到相关结果":
+                # TMDB启用但类型混合
+                message_text += f"{tmdb_info}\n\n⚠️ 类型混合，请手动选择：\n\n"
+            else:
+                # TMDB启用但未找到结果
+                message_text += f"{tmdb_info}\n\n❓ 未找到TMDB数据，请手动选择媒体类型：\n\n"
+            
+            keyboard = [
+                [InlineKeyboardButton("📺 电视剧/动漫", callback_data=json.dumps({"action": "import_auto_media_type", "type": "tv_series"}, ensure_ascii=False))],
+                [InlineKeyboardButton("🎬 电影", callback_data=json.dumps({"action": "import_auto_media_type", "type": "movie"}, ensure_ascii=False))]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.message.reply_text(
+                message_text,
+                reply_markup=reply_markup,
+                parse_mode="Markdown"
+            )
+            return 2  # 等待媒体类型选择
 
 
 async def import_auto_keyword_input(update: Update, context: ContextTypes.DEFAULT_TYPE):

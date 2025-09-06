@@ -34,6 +34,9 @@ services:
       - HTTPS_PROXY=http://127.0.0.1:2083
       - NO_PROXY=localhost,127.0.0.1
 
+      # TMDB配置（可选，用于智能搜索辅助）
+      - TMDB_API_KEY=your_tmdb_api_key_here
+
       # 其他可选配置
       - API_TIMEOUT=60
       - LOG_LEVEL=INFO
@@ -61,6 +64,7 @@ docker-compose up -d
 - `NO_PROXY`: 不使用代理的地址列表
 - `API_TIMEOUT`: API 请求超时时间（秒，默认 60）
 - `LOG_LEVEL`: 日志级别（INFO/DEBUG/WARNING/ERROR，默认 INFO）
+- `TMDB_API_KEY`: TMDB API 密钥（用于智能搜索辅助，从 https://www.themoviedb.org/settings/api 获取）
 
 ### 本地开发
 
@@ -91,6 +95,7 @@ python bot.py
 - 🤖 Telegram 机器人集成
 - 🎯 媒体搜索和导入
 - 🔄 自动导入功能
+- 🧠 TMDB智能搜索辅助（自动识别电影/电视剧类型）
 - 🌐 代理支持
 - 📊 详细日志记录
 - 🔥 热重载开发支持

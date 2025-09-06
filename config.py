@@ -89,6 +89,62 @@ class DanmakuAPIConfig:
 
 
 @dataclass
+class TMDBConfig:
+    """TMDB API 配置"""
+    api_key: Optional[str] = None
+    base_url: str = "https://api.themoviedb.org/3"
+    
+    def __post_init__(self):
+        if not self.api_key or not self.api_key.strip():
+            logger.info("ℹ️ 未配置 TMDB API Key，将跳过 TMDB 辅助搜索")
+            return
+            
+        placeholder_values = ['your_tmdb_api_key_here', 'YOUR_TMDB_API_KEY', 'placeholder']
+        if self.api_key.strip() in placeholder_values:
+            logger.info("ℹ️ TMDB API Key为占位符值，请配置真实的API密钥")
+            return
+            
+        # 验证API密钥
+        if self._validate_api_key():
+            logger.info("✅ TMDB API 配置已加载并验证通过，将启用辅助搜索功能")
+        else:
+            logger.info("❌ TMDB API Key验证失败，请检查密钥是否正确")
+    
+    @property
+    def enabled(self) -> bool:
+        """检查TMDB配置是否可用"""
+        if not self.api_key or not self.api_key.strip():
+            return False
+        # 检查是否为占位符值
+        placeholder_values = ['your_tmdb_api_key_here', 'YOUR_TMDB_API_KEY', 'placeholder']
+        if self.api_key.strip() in placeholder_values:
+            return False
+        # 验证API密钥有效性
+        return self._validate_api_key()
+    
+    def _validate_api_key(self) -> bool:
+        """验证API密钥有效性"""
+        try:
+            import requests
+            # 直接在这里验证，避免循环导入
+            url = f"{self.base_url}/configuration"
+            params = {'api_key': self.api_key}
+            
+            response = requests.get(url, params=params, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                return 'images' in data and 'base_url' in data.get('images', {})
+            else:
+                logger.debug(f"TMDB API密钥验证失败: HTTP {response.status_code}")
+                return False
+                
+        except Exception as e:
+            logger.debug(f"TMDB API密钥验证异常: {e}")
+            return False
+
+
+@dataclass
 class ProxyConfig:
     """代理配置（使用Docker环境变量）"""
     
@@ -142,6 +198,7 @@ class ConfigManager:
     def __init__(self):
         self._telegram: Optional[TelegramConfig] = None
         self._danmaku_api: Optional[DanmakuAPIConfig] = None
+        self._tmdb: Optional[TMDBConfig] = None
         self._proxy: Optional[ProxyConfig] = None
         self._app: Optional[AppConfig] = None
         self._load_config()
@@ -187,6 +244,11 @@ class ConfigManager:
                 timeout=int(os.getenv("API_TIMEOUT", 60))
             )
             
+            # 加载TMDB配置
+            self._tmdb = TMDBConfig(
+                api_key=os.getenv("TMDB_API_KEY", "")
+            )
+            
             # 加载代理配置（基于Docker环境变量）
             self._proxy = ProxyConfig()
             
@@ -217,6 +279,13 @@ class ConfigManager:
         if self._danmaku_api is None:
             raise RuntimeError("弹幕API配置未初始化")
         return self._danmaku_api
+    
+    @property
+    def tmdb(self) -> TMDBConfig:
+        """获取TMDB配置"""
+        if self._tmdb is None:
+            raise RuntimeError("TMDB配置未初始化")
+        return self._tmdb
     
     @property
     def proxy(self) -> ProxyConfig:
@@ -256,6 +325,11 @@ class ConfigManager:
                 "api_key": "***" + self.danmaku_api.api_key[-4:] if self.danmaku_api.api_key else "未配置",
                 "timeout": self.danmaku_api.timeout
             },
+            "tmdb": {
+                "enabled": self.tmdb.enabled,
+                "api_key": "***" + self.tmdb.api_key[-4:] if self.tmdb.api_key else "未配置",
+                "base_url": self.tmdb.base_url
+            },
             "proxy": {
                 "enabled": self.proxy.enabled,
                 "url": self.proxy.url if self.proxy.enabled else "未配置"
@@ -287,3 +361,8 @@ TELEGRAM_CONNECTION_POOL_SIZE = config.telegram.connection_pool_size
 POLLING_INTERVAL_ACTIVE = config.telegram.polling_interval_active
 POLLING_INTERVAL_IDLE = config.telegram.polling_interval_idle
 LOG_LEVEL = config.app.log_level
+
+# TMDB配置
+TMDB_API_KEY = config.tmdb.api_key
+TMDB_BASE_URL = config.tmdb.base_url
+TMDB_ENABLED = config.tmdb.enabled
