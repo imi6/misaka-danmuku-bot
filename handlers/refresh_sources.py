@@ -183,9 +183,13 @@ async def show_refresh_sources(update: Update, context: ContextTypes.DEFAULT_TYP
             
     except Exception as e:
         logger.error(f"获取刷新源异常: {e}")
-        await update.message.reply_text(
-            "❌ 获取影视源时发生错误，请稍后重试"
-        )
+        # 判断是回调查询还是普通消息
+        if hasattr(update, 'callback_query') and update.callback_query:
+            await update.callback_query.answer("❌ 获取影视源时发生错误，请稍后重试")
+        else:
+            await update.message.reply_text(
+                "❌ 获取影视源时发生错误，请稍后重试"
+            )
         return ConversationHandler.END
 
 async def show_refresh_source_selection(update: Update, context: ContextTypes.DEFAULT_TYPE, anime, sources):
@@ -281,9 +285,13 @@ async def show_refresh_options(update: Update, context: ContextTypes.DEFAULT_TYP
         
     except Exception as e:
         logger.error(f"获取分集列表异常: {e}")
-        await update.message.reply_text(
-            "❌ 获取分集列表时发生错误，请稍后重试"
-        )
+        # 判断是回调查询还是普通消息
+        if hasattr(update, 'callback_query') and update.callback_query:
+            await update.callback_query.answer("❌ 获取分集列表时发生错误，请稍后重试")
+        else:
+            await update.message.reply_text(
+                "❌ 获取分集列表时发生错误，请稍后重试"
+            )
         return ConversationHandler.END
 
 async def show_episode_list(update: Update, context: ContextTypes.DEFAULT_TYPE, episodes, page=0):
@@ -291,6 +299,10 @@ async def show_episode_list(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     source_info = context.user_data.get('refresh_source_info', {})
     source_name = source_info.get('source_name', '未知源')
     anime_title = source_info.get('anime_title', '未知影视')
+    
+    # 转义Markdown特殊字符
+    anime_title = anime_title.replace('*', '\\*').replace('_', '\\_').replace('`', '\\`').replace('[', '\\[').replace(']', '\\]')
+    source_name = source_name.replace('*', '\\*').replace('_', '\\_').replace('`', '\\`').replace('[', '\\[').replace(']', '\\]')
     
     # 分页设置
     episodes_per_page = 10
@@ -306,26 +318,28 @@ async def show_episode_list(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     end_idx = min(start_idx + episodes_per_page, total_episodes)
     page_episodes = episodes[start_idx:end_idx]
     
-    # 构建消息
+    # 构建消息，避免Markdown解析错误
     message = (
-        f"🔄 **分集刷新**\n\n"
+        f"🔄 *分集刷新*\n\n"
         f"📺 影视：{anime_title}\n"
         f"🎯 数据源：{source_name}\n"
         f"📊 总计：{total_episodes} 集\n\n"
-        f"**第 {page + 1}/{total_pages} 页**\n\n"
+        f"*第 {page + 1}/{total_pages} 页*\n\n"
     )
     
     for episode in page_episodes:
         episode_index = episode.get('episodeIndex', 0)
         title = episode.get('title', f'第{episode_index}集')
+        # 转义Markdown特殊字符
+        title = title.replace('*', '\\*').replace('_', '\\_').replace('`', '\\`').replace('[', '\\[').replace(']', '\\]')
         comment_count = episode.get('commentCount', 0)
         
-        message += f"**{episode_index}.** {title}"
+        message += f"*{episode_index}.* {title}"
         if comment_count > 0:
             message += f" ({comment_count}条弹幕)"
         message += "\n"
     
-    message += "\n💡 **刷新方式：**\n"
+    message += "\n💡 *刷新方式：*\n"
     message += "• 输入单个集数：如 `5`\n"
     message += "• 输入集数区间：如 `1-10` 或 `5,8,12`\n"
     message += "• 输入 `all` 刷新全部分集"
