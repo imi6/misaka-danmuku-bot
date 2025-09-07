@@ -131,7 +131,7 @@ async def process_auto_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
         media_type = input_info["media_type"]
         tmdb_id = input_info["tmdb_id"]
         
-        await update.message.reply_text(f"🎬 检测到 TMDB {'电视剧' if media_type == 'tv_series' else '电影'}\n\n正在导入...")
+        await update.message.reply_text(f"🎬 检测到 TMDB {'电视剧' if media_type == 'tv_series' else '电影'}")
         
         if media_type == "movie":
             # 电影：直接导入
@@ -186,7 +186,7 @@ async def process_auto_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
                 tvdb_id = str(raw_tvdb_id)
             title = tvdb_result.get("name", "未知标题")
             
-            await update.message.reply_text(f"✅ TVDB查询成功\n\n📺 标题: {title}\nID: {tvdb_id}\n类型: {'电视剧' if media_type == 'tv_series' else '电影'}\n\n正在导入...")
+            await update.message.reply_text(f"✅ TVDB查询成功\n\n📺 标题: {title}\nID: {tvdb_id}\n类型: {'电视剧' if media_type == 'tv_series' else '电影'}")
             
             if media_type == "movie":
                 # 电影：直接导入
@@ -245,7 +245,7 @@ async def process_auto_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
                     f"📅 年份: {media_year}\n"
                     f"🎭 类型: {type_name}\n"
                     f"⭐ 评分: {rating}\n\n"
-                    f"正在导入...",
+                    "",
                     parse_mode="Markdown"
                 )
                 
@@ -347,7 +347,7 @@ async def process_auto_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
                         f"📅 年份: {media_year}\n"
                         f"🎭 类型: {type_name}\n"
                         f"⭐ 评分: {rating}\n\n"
-                        f"正在导入...",
+                        "",
                         parse_mode="Markdown"
                     )
                 else:
@@ -435,7 +435,7 @@ async def process_auto_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
                     f"📅 年份: {media_year}\n"
                     f"🎭 类型: {type_name}\n"
                     f"⭐ 评分: {rating}\n\n"
-                    f"正在导入...",
+                    "",
                     parse_mode="Markdown"
                 )
                 
@@ -617,7 +617,7 @@ async def import_auto_keyword_input(update: Update, context: ContextTypes.DEFAUL
         if suggested_type == "movie":
             # 电影类型：直接导入
             await update.message.reply_text(
-                f"🎯 **TMDB智能识别**\n\n{tmdb_info}\n\n✅ 自动选择类型：{type_name}\n\n🎬 正在导入电影...",
+                f"🎯 **TMDB智能识别**\n\n{tmdb_info}\n\n✅ 自动选择类型：{type_name}",
                 parse_mode="Markdown"
             )
             
@@ -1370,7 +1370,7 @@ async def call_import_auto_api(update: Update, context: ContextTypes.DEFAULT_TYP
         send_message = update.message.reply_text
         send_message_with_markup = lambda text, markup: update.message.reply_text(text, reply_markup=markup)
     
-    await send_message("🔄 正在导入媒体...")
+    # 移除中间状态提示，直接调用API
     
     # 调用API
     api_result = call_danmaku_api(
@@ -1381,7 +1381,7 @@ async def call_import_auto_api(update: Update, context: ContextTypes.DEFAULT_TYP
     
     # 处理API响应
     if api_result["success"]:
-        success_message = f"✅ 导入成功！\n\n{api_result.get('message', '媒体已成功导入到库中')}"
+        success_message = f"✅ 导入成功！"
         
         # 根据导入方式提供继续导入的按钮
         import_method = params.get("importMethod")
@@ -1441,7 +1441,7 @@ async def call_import_auto_api_with_continue(update: Update, context: ContextTyp
     send_message = update.message.reply_text
     send_message_with_markup = lambda text, markup: update.message.reply_text(text, reply_markup=markup)
     
-    await send_message("🔄 正在导入媒体...")
+    # 移除中间状态提示，直接调用API
     
     # 调用API
     api_result = call_danmaku_api(
@@ -1452,7 +1452,7 @@ async def call_import_auto_api_with_continue(update: Update, context: ContextTyp
     
     # 处理API响应
     if api_result["success"]:
-        success_message = f"✅ 导入成功！\n\n{api_result.get('message', '媒体已成功导入到库中')}"
+        success_message = f"✅ 导入成功！"
         
         # 根据导入方式提供继续导入的按钮
         import_method = params.get("importMethod")

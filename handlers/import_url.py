@@ -378,7 +378,6 @@ async def auto_import_movie(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     
     await update.message.reply_text(
         f"🎬 检测到电影类型，自动使用第1集进行导入\n\n"
-        f"🚀 开始导入...\n\n"
         f"📺 影视: {anime_title}\n"
         f"🎬 源: {source_name}\n"
         f"📊 集数: 第{episode_index}集（电影）\n"
@@ -833,7 +832,7 @@ async def handle_episode_input(update: Update, context: ContextTypes.DEFAULT_TYP
         source_name = source.get('providerName', '未知源')
         
         await update.message.reply_text(
-            f"🚀 开始导入...\n\n"
+            f"🚀 导入信息:\n\n"
             f"📺 影视: {anime_title}\n"
             f"🎬 源: {source_name}\n"
             f"📊 集数: 第{episode_index}集\n"

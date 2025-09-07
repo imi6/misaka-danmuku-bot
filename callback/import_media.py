@@ -155,7 +155,7 @@ async def handle_media_type_selection(update: Update, context: ContextTypes.DEFA
         if media_type == "movie":
             # 电影类型：直接导入
             await query.edit_message_text(
-                f"✅ 已选择：{type_name}\n关键词：{existing_keyword}\n\n🎬 正在导入电影..."
+                f"✅ 已选择：{type_name}\n关键词：{existing_keyword}"
             )
             
             import_params = {
@@ -201,12 +201,12 @@ async def handle_media_type_selection(update: Update, context: ContextTypes.DEFA
                 f"🔍 自动检测: {detected_name}\n"
                 f"👤 用户选择: {type_name}\n\n"
                 f"将按用户选择的类型进行导入。\n\n"
-                f"{'🎬 正在导入电影...' if media_type == 'movie' else '请选择导入方式：'}"
+                f"{'✅ 电影类型确认' if media_type == 'movie' else '请选择导入方式：'}"
             )
         else:
             await query.edit_message_text(
                 f"✅ 已选择：{type_name}\nID：{existing_id}\n\n"
-                f"{'🎬 正在导入电影...' if media_type == 'movie' else '请选择导入方式：'}"
+                f"{'✅ 电影类型确认' if media_type == 'movie' else '请选择导入方式：'}"
             )
         
         if media_type == "movie":
@@ -281,7 +281,7 @@ async def handle_import_method_selection(update: Update, context: ContextTypes.D
     
     if method == "auto":
         # 自动导入：发送新消息
-        await query.message.reply_text("🚀 自动导入\n\n正在导入全部内容...")
+        await query.message.reply_text("🚀 自动导入")
         
         import_params["importMethod"] = "auto"  # 添加导入方式标识
         from handlers.import_media import call_import_auto_api
