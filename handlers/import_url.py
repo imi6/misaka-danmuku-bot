@@ -4,7 +4,7 @@ from bs4 import BeautifulSoup
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, MessageHandler, filters
 from utils.api import call_danmaku_api
-from utils.permission import check_user_permission
+from utils.permission import check_admin_permission
 from utils.title_extractor import extract_show_title_from_h1
 
 logger = logging.getLogger(__name__)
@@ -411,7 +411,7 @@ async def auto_import_movie(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     context.user_data.clear()
     return ConversationHandler.END
 
-@check_user_permission
+@check_admin_permission
 async def import_url_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """开始URL导入流程"""
     # 清理之前的数据并设置当前状态

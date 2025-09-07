@@ -21,6 +21,7 @@ class TelegramConfig:
     """Telegram Bot 配置"""
     bot_token: str
     allowed_user_ids: List[int]
+    admin_user_ids: List[int] = field(default_factory=list)
     connect_timeout: float = 30.0
     read_timeout: float = 30.0
     pool_timeout: float = 60.0
@@ -34,6 +35,11 @@ class TelegramConfig:
             raise ValueError("❌ TELEGRAM_BOT_TOKEN 不能为空")
         if not self.allowed_user_ids:
             raise ValueError("❌ ALLOWED_USER_IDS 不能为空")
+        
+        # 如果没有配置管理员，则所有允许的用户都是管理员
+        if not self.admin_user_ids:
+            self.admin_user_ids = self.allowed_user_ids.copy()
+            logger.info("ℹ️ 未配置ADMIN_USER_IDS，所有ALLOWED_USER_IDS都将作为管理员")
         
         # 验证超时配置
         if self.connect_timeout <= 0:
@@ -286,10 +292,13 @@ class ConfigManager:
             telegram_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
             user_ids_str = os.getenv("ALLOWED_USER_IDS", "")
             user_ids = self._parse_user_ids(user_ids_str)
+            admin_ids_str = os.getenv("ADMIN_USER_IDS", "")
+            admin_ids = self._parse_user_ids(admin_ids_str)
             
             self._telegram = TelegramConfig(
                 bot_token=telegram_token,
                 allowed_user_ids=user_ids,
+                admin_user_ids=admin_ids,
                 connect_timeout=float(os.getenv("TELEGRAM_CONNECT_TIMEOUT", 30.0)),
                 read_timeout=float(os.getenv("TELEGRAM_READ_TIMEOUT", 30.0)),
                 pool_timeout=float(os.getenv("TELEGRAM_POOL_TIMEOUT", 60.0)),
@@ -438,6 +447,7 @@ config = ConfigManager()
 # 向后兼容的变量（保持现有代码正常工作）
 TELEGRAM_BOT_TOKEN = config.telegram.bot_token
 ALLOWED_USER_IDS = config.telegram.allowed_user_ids
+ADMIN_USER_IDS = config.telegram.admin_user_ids
 DANMAKU_API_BASE_URL = config.danmaku_api.base_url
 DANMAKU_API_KEY = config.danmaku_api.api_key
 DANMAKU_API_HEADERS = config.danmaku_api.headers

@@ -2,7 +2,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, CallbackQueryHandler, MessageHandler, filters
 import logging
 from utils.api import call_danmaku_api
-from utils.permission import check_user_permission
+from utils.permission import check_admin_permission
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ VALIDITY_PERIODS = [
     {'value': '365d', 'label': '1 年'},
 ]
 
-@check_user_permission
+@check_admin_permission
 async def show_tokens_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """显示tokens列表"""
     try:

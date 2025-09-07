@@ -2,7 +2,7 @@ import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 from utils.api import call_danmaku_api
-from utils.permission import check_user_permission
+from utils.permission import check_admin_permission
 from handlers.import_url import get_library_data, search_video_by_keyword
 
 logger = logging.getLogger(__name__)
@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 # 状态常量
 REFRESH_KEYWORD_INPUT, REFRESH_ANIME_SELECT, REFRESH_SOURCE_SELECT, REFRESH_EPISODE_INPUT = range(4)
 
-@check_user_permission
+@check_admin_permission
 async def refresh_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理/refresh命令"""
     # 获取命令参数

@@ -1,16 +1,23 @@
 from telegram import Update, ReplyKeyboardRemove, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import ContextTypes, ConversationHandler
+from utils.permission import check_user_permission, is_admin
 
+@check_user_permission
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """发送欢迎消息和指令列表"""
-    welcome_msg = """
+    user_id = update.effective_user.id
+    is_user_admin = is_admin(user_id)
+    
+    if is_user_admin:
+        welcome_msg = """
 👋 欢迎使用 Misaka 弹幕系统机器人！
-仅授权用户可使用以下指令，直接发送指令即可操作：
+您是管理员，可使用以下所有指令：
 
 【📥 媒体导入】
 /search [关键词] - 搜索媒体（如：/search 火影忍者）
 /auto - 自动导入媒体（支持关键词搜索和多平台链接导入）
 /url - 为已存在的数据源导入指定集数
+/refresh - 刷新数据源
 
 【🔑 Token管理】
 /tokens - 管理API访问令牌
@@ -19,58 +26,119 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /help  - 查看帮助信息
 /cancel - 取消当前操作
 
-💡 提示：点击下方按钮快速使用常用功能！
-    """
-    
-    # 创建自定义键盘，提供快捷按钮
-    keyboard = [
-        [KeyboardButton("/search"), KeyboardButton("/auto")],
-        [KeyboardButton("/url"), KeyboardButton("/tokens")],
-        [KeyboardButton("/help"), KeyboardButton("/cancel")]
-    ]
-    reply_markup = ReplyKeyboardMarkup(
-        keyboard, 
-        resize_keyboard=True,
-        one_time_keyboard=False,
-        input_field_placeholder="选择功能或直接输入命令..."
-    )
-    
-    await update.message.reply_text(welcome_msg, reply_markup=reply_markup)
+💡 提示：直接输入命令或使用菜单选择功能！
+        """
+        
+        # 管理员键盘，包含所有功能
+        keyboard = [
+            [KeyboardButton("/search"), KeyboardButton("/auto")],
+            [KeyboardButton("/url"), KeyboardButton("/refresh")],
+            [KeyboardButton("/tokens"), KeyboardButton("/help")],
+            [KeyboardButton("/cancel")]
+        ]
+    else:
+        welcome_msg = """
+👋 欢迎使用 Misaka 弹幕系统机器人！
+您可以使用以下指令：
 
+【📥 媒体搜索】
+/search [关键词] - 搜索媒体（如：/search 火影忍者）
+/auto - 自动导入媒体（支持关键词搜索和多平台链接导入）
+
+【🔒 管理员功能】（需要管理员权限）
+/url - 为已存在的数据源导入指定集数
+/refresh - 刷新数据源
+/tokens - 管理API访问令牌
+
+【其他】
+/help  - 查看帮助信息
+/cancel - 取消当前操作
+
+💡 提示：直接输入命令或使用菜单选择功能！管理员功能需要相应权限。
+        """
+        
+        # 普通用户键盘，显示所有功能但会有权限检查
+        keyboard = [
+            [KeyboardButton("/search"), KeyboardButton("/auto")],
+            [KeyboardButton("/url"), KeyboardButton("/refresh")],
+            [KeyboardButton("/tokens"), KeyboardButton("/help")],
+            [KeyboardButton("/cancel")]
+        ]
+    
+    # 移除自定义键盘，只保留命令菜单
+    await update.message.reply_text(welcome_msg, reply_markup=ReplyKeyboardRemove())
+
+@check_user_permission
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """发送帮助信息并显示自定义键盘"""
-    help_msg = """
-👋 欢迎使用 Misaka 弹幕系统机器人！
-仅授权用户可使用以下指令，直接发送指令即可操作：
+    """显示帮助信息"""
+    user_id = update.effective_user.id
+    is_user_admin = is_admin(user_id)
+    
+    if is_user_admin:
+        help_text = """
+🤖 Misaka 弹幕系统机器人 - 管理员帮助文档
 
-【📥 媒体导入】
-/search [关键词] - 搜索媒体（如：/search 火影忍者）
-/auto - 自动导入媒体（支持关键词搜索和多平台链接导入）
-/url - 为已存在的数据源导入指定集数
+【📥 媒体导入功能】
+• /search [关键词] - 搜索并导入媒体
+  示例：/search 火影忍者
+  
+• /auto - 自动导入媒体
+  支持关键词搜索和多平台链接导入
+  
+• /url - 为已存在的数据源导入指定集数
+  适用于已有数据源但需要补充集数的情况
+  
+• /refresh - 刷新数据源
+  更新现有数据源信息
 
 【🔑 Token管理】
-/tokens - 管理API访问令牌
+• /tokens - 管理API访问令牌
+  查看、创建、删除访问令牌
 
-【其他】
-/help  - 查看帮助信息
-/cancel - 取消当前操作
+【📋 其他指令】
+• /help - 显示此帮助信息
+• /cancel - 取消当前操作
+• /start - 返回主菜单
 
-💡 提示：点击下方按钮快速使用常用功能！
-    """
+💡 使用提示：
+- 所有操作都有引导界面，按提示操作即可
+- 可以随时使用 /cancel 取消当前操作
+- 遇到问题可以重新发送 /start 重置状态
+        """
+    else:
+         help_text = """
+🤖 Misaka 弹幕系统机器人 - 用户帮助文档
+
+【📥 媒体搜索功能】
+• /search [关键词] - 搜索媒体
+  示例：/search 火影忍者
+  
+• /auto - 自动导入媒体
+  支持关键词搜索和多平台链接导入
+
+【🔒 管理员功能】（需要管理员权限）
+• /url - 为已存在的数据源导入指定集数
+  适用于已有数据源但需要补充集数的情况
+  
+• /refresh - 刷新数据源
+  更新现有数据源信息
+
+• /tokens - 管理API访问令牌
+  查看、创建、删除访问令牌
+
+【📋 其他指令】
+• /help - 显示此帮助信息
+• /cancel - 取消当前操作
+• /start - 返回主菜单
+
+💡 使用提示：
+- 所有操作都有引导界面，按提示操作即可
+- 可以随时使用 /cancel 取消当前操作
+- 管理员功能需要相应权限，非管理员点击会提示权限不足
+- 遇到问题可以重新发送 /start 重置状态
+         """
     
-    # 创建自定义键盘，提供快捷按钮
-    keyboard = [
-        [KeyboardButton("🔍 /search"), KeyboardButton("🤖 /auto")],
-        [KeyboardButton("❓ /help"), KeyboardButton("❌ /cancel")]
-    ]
-    reply_markup = ReplyKeyboardMarkup(
-        keyboard, 
-        resize_keyboard=True,
-        one_time_keyboard=False,
-        input_field_placeholder="选择功能或直接输入命令..."
-    )
-    
-    await update.message.reply_text(help_msg, reply_markup=reply_markup)
+    await update.message.reply_text(help_text)
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """取消当前对话流程"""
