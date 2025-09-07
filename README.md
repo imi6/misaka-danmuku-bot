@@ -24,9 +24,10 @@ services:
       # Telegram机器人必填配置
       - TELEGRAM_BOT_TOKEN=机器人token，botfather获取
       - ALLOWED_USER_IDS=用户id，多个用逗号分隔，get My Id 获取
+      - ADMIN_USER_IDS=管理员用户id，多个用逗号分隔，拥有完整功能权限
 
       # Misaka Danmaku API必填配置
-      - DANMAKU_API_BASE_URL=http://127.0.0.1:7668/api/control
+      - DANMAKU_API_BASE_URL=http://127.0.0.1:7768/api/control
       - DANMAKU_API_KEY=外部apikey
 
       # 代理配置（可选）
@@ -60,6 +61,7 @@ docker-compose up -d
 
 - `TELEGRAM_BOT_TOKEN`: Telegram 机器人 Token
 - `ALLOWED_USER_IDS`: 允许使用机器人的用户 ID（多个用户用逗号分隔）
+- `ADMIN_USER_IDS`: 管理员用户 ID（多个用户用逗号分隔，拥有完整功能权限）
 - `DANMAKU_API_BASE_URL`: Misaka Danmaku API 基础地址
 - `DANMAKU_API_KEY`: Misaka Danmaku API 密钥
 
@@ -98,9 +100,32 @@ pip install -r requirements.txt
 python bot.py
 ```
 
+## 权限说明
+
+### 管理员权限
+管理员用户（在 `ADMIN_USER_IDS` 中配置）拥有完整的功能权限：
+- ✅ 媒体搜索和导入 (`/search`)
+- ✅ 自动导入功能 (`/auto`)
+- ✅ URL链接导入 (`/url`)
+- ✅ 刷新数据源 (`/refresh`)
+- ✅ Token管理 (`/tokens`)
+- ✅ 帮助和取消操作 (`/help`, `/cancel`)
+
+### 普通用户权限
+普通用户（在 `ALLOWED_USER_IDS` 中配置但不在 `ADMIN_USER_IDS` 中）仅有基础功能权限：
+- ✅ 媒体搜索和导入 (`/search`)
+- ✅ 自动导入功能 (`/auto`)
+- ✅ 帮助和取消操作 (`/help`, `/cancel`)
+- ❌ URL链接导入 (`/url`) - 需要管理员权限
+- ❌ 刷新数据源 (`/refresh`) - 需要管理员权限
+- ❌ Token管理 (`/tokens`) - 需要管理员权限
+
+> 💡 **提示**: 普通用户可以看到所有功能选项，但点击管理员专用功能时会收到权限不足的提示。
+
 ## 功能特性
 
 - 🤖 Telegram 机器人集成
+- 🔐 用户权限管理（管理员/普通用户分级）
 - 🎯 媒体搜索和导入
 - 🔄 自动导入功能
 - 🧠 TMDB智能搜索辅助（自动识别电影/电视剧类型）
