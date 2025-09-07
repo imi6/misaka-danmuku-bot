@@ -94,8 +94,6 @@ async def handle_import_auto_callback(update: Update, context: ContextTypes.DEFA
         
         if action == "import_auto_search_type":
             return await handle_search_type_selection(update, context, callback_data)
-        elif action == "import_auto_search":
-            return await handle_search_redirect(update, context, callback_data)
         elif action == "import_auto_media_type":
             return await handle_media_type_selection(update, context, callback_data)
         # elif action == "import_auto_method":
@@ -151,33 +149,6 @@ async def handle_search_type_selection(update: Update, context: ContextTypes.DEF
         )
         
         return IMPORT_AUTO_ID_INPUT
-
-
-async def handle_search_redirect(update: Update, context: ContextTypes.DEFAULT_TYPE, callback_data: dict):
-    """处理搜索重定向：引导用户进入/search流程"""
-    query = update.callback_query
-    keyword = callback_data.get("keyword", "")
-    
-    if not keyword:
-        await query.edit_message_text(
-            "❌ 缺少搜索关键词，请重新操作"
-        )
-        return ConversationHandler.END
-    
-    # 显示搜索引导信息
-    await query.edit_message_text(
-        f"🔍 **搜索引导**\n\n"
-        f"关键词：{keyword}\n\n"
-        f"正在为您启动搜索流程，这将提供更精确的匹配结果...",
-        parse_mode="Markdown"
-    )
-    
-    # 调用搜索功能
-    from handlers.import_media import process_search_media
-    await process_search_media(query, keyword, context)
-    
-    # 结束当前对话，让用户进入搜索结果状态
-    return ConversationHandler.END
 
 
 async def handle_media_type_selection(update: Update, context: ContextTypes.DEFAULT_TYPE, callback_data: dict):

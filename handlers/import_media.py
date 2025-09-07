@@ -975,10 +975,17 @@ async def process_auto_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
                 message_text += f"{tmdb_info}\n\n❓ 未找到TMDB数据，请手动选择媒体类型：\n\n"
             else:
                 # TMDB启用但无法确定单一类型（可能是类型混合或其他原因）
-                message_text += f"{tmdb_info}\n\n🔍 **发现多种类型结果，建议使用搜索功能获取更精确的匹配**\n\n"
+                # 直接进入搜索流程
+                await update.message.reply_text(
+                    f"{message_text}{tmdb_info}\n\n🔍 **检测到多种媒体类型，正在为您启动搜索流程以获得更精确的结果...**",
+                    parse_mode="Markdown"
+                )
+                
+                # 直接调用搜索功能
+                await process_search_media(update, keyword, context)
+                return ConversationHandler.END
             
             keyboard = [
-                [InlineKeyboardButton("🔍 进入搜索流程", callback_data=json.dumps({"action": "import_auto_search", "keyword": keyword}, ensure_ascii=False))],
                 [InlineKeyboardButton("📺 电视剧/动漫", callback_data=json.dumps({"action": "import_auto_media_type", "type": "tv_series"}, ensure_ascii=False))],
                 [InlineKeyboardButton("🎬 电影", callback_data=json.dumps({"action": "import_auto_media_type", "type": "movie"}, ensure_ascii=False))]
             ]
