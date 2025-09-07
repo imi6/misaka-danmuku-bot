@@ -26,9 +26,6 @@ class TelegramConfig:
     read_timeout: float = 30.0
     pool_timeout: float = 60.0
     connection_pool_size: int = 20
-    # 动态轮询间隔配置（秒）
-    polling_interval_active: int = 5
-    polling_interval_idle: int = 15
     
     def __post_init__(self):
         if not self.bot_token:
@@ -55,13 +52,7 @@ class TelegramConfig:
             logger.warning("⚠️ connection_pool_size 必须大于0，使用默认值20")
             self.connection_pool_size = 20
         
-        # 验证轮询间隔配置
-        if self.polling_interval_active <= 0:
-            logger.warning("⚠️ polling_interval_active 必须大于0，使用默认值3")
-            self.polling_interval_active = 3
-        if self.polling_interval_idle <= 0:
-            logger.warning("⚠️ polling_interval_idle 必须大于0，使用默认值10")
-            self.polling_interval_idle = 10
+
 
 
 @dataclass
@@ -302,9 +293,7 @@ class ConfigManager:
                 connect_timeout=float(os.getenv("TELEGRAM_CONNECT_TIMEOUT", 30.0)),
                 read_timeout=float(os.getenv("TELEGRAM_READ_TIMEOUT", 30.0)),
                 pool_timeout=float(os.getenv("TELEGRAM_POOL_TIMEOUT", 60.0)),
-                connection_pool_size=int(os.getenv("TELEGRAM_CONNECTION_POOL_SIZE", 20)),
-                polling_interval_active=int(os.getenv("POLLING_INTERVAL_ACTIVE", 5)),
-                polling_interval_idle=int(os.getenv("POLLING_INTERVAL_IDLE", 15))
+                connection_pool_size=int(os.getenv("TELEGRAM_CONNECTION_POOL_SIZE", 20))
             )
             
             # 加载弹幕API配置
@@ -458,8 +447,6 @@ TELEGRAM_CONNECT_TIMEOUT = config.telegram.connect_timeout
 TELEGRAM_READ_TIMEOUT = config.telegram.read_timeout
 TELEGRAM_POOL_TIMEOUT = config.telegram.pool_timeout
 TELEGRAM_CONNECTION_POOL_SIZE = config.telegram.connection_pool_size
-POLLING_INTERVAL_ACTIVE = config.telegram.polling_interval_active
-POLLING_INTERVAL_IDLE = config.telegram.polling_interval_idle
 LOG_LEVEL = config.app.log_level
 
 # TMDB配置

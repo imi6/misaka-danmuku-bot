@@ -31,7 +31,7 @@ from telegram.ext import (
 # ------------------------------
 # 轮询管理器导入
 # ------------------------------
-from utils.polling_manager import DynamicPollingManager
+
 
 # ------------------------------
 # 全局配置常量
@@ -244,20 +244,14 @@ async def _setup_bot_commands(application: Application):
         logger.error(f"❌ Failed to set bot commands: {e}")
 
 def _wrap_with_session_management(handler_func):
-    """包装处理器函数，记录用户活动"""
+    """包装处理器函数"""
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        # 记录用户活动
-        if polling_manager is not None:
-            polling_manager.record_user_activity()
         return await handler_func(update, context)
     return wrapper
 
 def _wrap_conversation_entry_point(handler_func):
-    """包装对话入口点处理器，记录用户活动"""
+    """包装对话入口点处理器"""
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        # 记录用户活动
-        if polling_manager is not None:
-            polling_manager.record_user_activity()
         return await handler_func(update, context)
     return wrapper
 
@@ -566,21 +560,12 @@ if __name__ == "__main__":
     import signal
     
     # 全局变量用于存储需要清理的资源
-    polling_manager = None
     file_observer = None
     application = None
     
     async def cleanup_resources(app):
         """清理所有资源的异步函数"""
         logger.info("🛑 开始清理资源...")
-        
-        # 停止轮询管理器
-        if polling_manager is not None:
-            try:
-                await polling_manager.stop_polling()
-                logger.info("📡 Dynamic polling stopped")
-            except Exception as e:
-                logger.error(f"❌ 停止动态轮询时出错: {e}")
         
         # 停止热重载服务
         if file_observer is not None:
@@ -607,26 +592,16 @@ if __name__ == "__main__":
         application = loop.run_until_complete(init_bot())
         logger.info("🚀 Bot application initialization complete")
         
-        # 初始化动态轮询管理器
+        # 获取配置管理器
         config_manager, _, _ = _import_modules()
-        # 创建轮询管理器（移除会话管理器依赖）
-        polling_manager = DynamicPollingManager(
-            application=application,
-            active_interval=config_manager.telegram.polling_interval_active,
-            idle_interval=config_manager.telegram.polling_interval_idle
-        )
         
         # 设置 post_shutdown 回调来清理资源
         application.post_shutdown = cleanup_resources
         
         # 热重载功能（仅在开发环境启用）
-        # 优先使用 ENABLE_HOT_RELOAD 环境变量，如果未设置则根据 ENVIRONMENT 自动判断
-        enable_hot_reload_env = os.getenv('ENABLE_HOT_RELOAD', '').lower()
-        if enable_hot_reload_env in ['true', 'false']:
-            enable_hot_reload = enable_hot_reload_env == 'true'
-        else:
-            # 根据环境配置自动启用热更新
-            enable_hot_reload = config_manager.app.environment.lower() in ['dev', 'development', 'debug']
+        # 根据ENVIRONMENT环境变量决定是否启用热重载
+        environment = os.getenv('ENVIRONMENT', config_manager.app.environment).lower()
+        enable_hot_reload = environment == 'development'
 
         if enable_hot_reload:
             file_observer = start_file_observer(application)
@@ -636,25 +611,15 @@ if __name__ == "__main__":
 
         logger.info("📡 Bot has started listening for commands (press Ctrl+C to exit gracefully)")
         
-        # 启动动态轮询监控任务
-        loop.run_until_complete(polling_manager.start_monitoring())
+
         
-        # 启动标准轮询，使用固定的短间隔以确保响应速度
-        # 动态延迟将在处理器层面实现
-        loop.run_until_complete(application.run_polling(
-            allowed_updates=None,
-            poll_interval=1.0  # 使用1秒固定间隔确保快速响应
-        ))
+        # 启动bot应用
+        loop.run_until_complete(application.run_polling())
         
     except Exception as e:
         logger.error(f"❌ Bot failed to start! Error: {str(e)}", exc_info=True)
         # 在异常情况下手动清理资源（仅在事件循环未关闭时）
-        if polling_manager is not None and not loop.is_closed():
-            try:
-                loop.run_until_complete(polling_manager.stop_polling())
-                logger.info("📡 Dynamic polling stopped (exception cleanup)")
-            except Exception as cleanup_error:
-                logger.error(f"❌ 异常清理时停止动态轮询出错: {cleanup_error}")
+
         
         if file_observer is not None:
             try:

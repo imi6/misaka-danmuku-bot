@@ -15,8 +15,7 @@ services:
       - HTTP_PROXY=${HTTP_PROXY:-}
       - HTTPS_PROXY=${HTTPS_PROXY:-}
       - NO_PROXY=${NO_PROXY:-localhost,127.0.0.1}
-      - TELEGRAM_POLLING_INTERVAL=${TELEGRAM_POLLING_INTERVAL:-30.0}
-      - ENABLE_HOT_RELOAD=${ENABLE_HOT_RELOAD:-false}
+
       - ENVIRONMENT=production
     
     # 日志配置
