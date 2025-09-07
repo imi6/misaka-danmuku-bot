@@ -265,6 +265,7 @@ def _setup_handlers(application, handlers_module, callback_module):
     import_auto = handlers_module.import_auto
     import_auto_keyword_input = handlers_module.import_auto_keyword_input
     import_auto_id_input = handlers_module.import_auto_id_input
+    import_auto_season_selection = handlers_module.import_auto_season_selection
     # import_auto_season_input = handlers_module.import_auto_season_input  # 已移除
 # import_auto_episode_input = handlers_module.import_auto_episode_input  # 已移除
     handle_import_callback = callback_module.handle_import_callback
@@ -371,6 +372,12 @@ def _setup_handlers(application, handlers_module, callback_module):
                 CallbackQueryHandler(  # Handle all import_auto related callbacks
                     _wrap_with_session_management(handle_import_auto_callback),
                     pattern=r'{"action": "import_auto_.*"}'
+                )
+            ],
+            4: [  # IMPORT_AUTO_SEASON_SELECTION = 4
+                CallbackQueryHandler(
+                    _wrap_with_session_management(handle_import_auto_callback),
+                    pattern=r'(season_\d+|cancel|{"action": "import_auto_.*"})'
                 )
             ],
             # 4: [  # IMPORT_AUTO_SEASON_INPUT = 4（已移除）

@@ -137,6 +137,11 @@ class DoubanScraper:
                 if '(豆瓣)' in title_text:
                     title_text = title_text.replace('(豆瓣)', '').strip()
                 info["title"] = title_text
+                
+                # 从标题中解析季度信息
+                season_number = self._extract_season_from_title(title_text)
+                if season_number:
+                    info["season"] = season_number
             
             # 提取年份 - 尝试多种方式
             year_element = soup.find('span', class_='year')
@@ -239,6 +244,55 @@ class DoubanScraper:
         except Exception as e:
             logger.error(f"提取豆瓣信息失败: {e}")
             return info
+    
+    def _extract_season_from_title(self, title: str) -> Optional[int]:
+        """从标题中提取季度信息
+        
+        Args:
+            title: 媒体标题
+            
+        Returns:
+            季度数字，如果未找到返回None
+        """
+        if not title:
+            return None
+            
+        # 常见的季度表示模式
+        season_patterns = [
+            r'第([一二三四五六七八九十\d]+)季',  # 第X季
+            r'Season\s*(\d+)',  # Season X
+            r'S(\d+)',  # SX
+            r'第([一二三四五六七八九十\d]+)部',  # 第X部
+            r'([一二三四五六七八九十\d]+)季',  # X季
+        ]
+        
+        # 中文数字到阿拉伯数字的映射
+        chinese_to_arabic = {
+            '一': 1, '二': 2, '三': 3, '四': 4, '五': 5,
+            '六': 6, '七': 7, '八': 8, '九': 9, '十': 10
+        }
+        
+        for pattern in season_patterns:
+            match = re.search(pattern, title, re.IGNORECASE)
+            if match:
+                season_str = match.group(1)
+                
+                # 尝试直接转换为数字
+                if season_str.isdigit():
+                    return int(season_str)
+                
+                # 尝试中文数字转换
+                if season_str in chinese_to_arabic:
+                    return chinese_to_arabic[season_str]
+                
+                # 处理复合中文数字（如十一、十二等）
+                if season_str.startswith('十') and len(season_str) > 1:
+                    if season_str[1] in chinese_to_arabic:
+                        return 10 + chinese_to_arabic[season_str[1]]
+                elif season_str == '十':
+                    return 10
+        
+        return None
 
 # 全局实例
 _douban_scraper = None

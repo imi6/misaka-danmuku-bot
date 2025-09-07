@@ -3,6 +3,7 @@ from .general import start, help_command, cancel
 from .import_media import (
     search_media, search_media_input, process_search_media,
     import_auto, import_auto_keyword_input, import_auto_id_input,
+    import_auto_season_selection,
     # import_auto_season_input, import_auto_episode_input  # 已移除
 )
 
@@ -11,5 +12,6 @@ __all__ = [
     "start", "help_command", "cancel",
     "search_media", "search_media_input", "process_search_media",
     "import_auto", "import_auto_keyword_input", "import_auto_id_input",
+    "import_auto_season_selection",
     # "import_auto_season_input", "import_auto_episode_input"  # 已移除
 ]

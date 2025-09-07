@@ -77,8 +77,17 @@ async def handle_import_callback(update: Update, context: ContextTypes.DEFAULT_T
 async def handle_import_auto_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理import_auto相关的回调"""
     query = update.callback_query
+    logger.info(f"🔍 收到import_auto回调: {query.data}")
     await query.answer()
     
+    # 首先检查是否为季度选择回调（非JSON格式）
+    if query.data.startswith("season_") or query.data == "cancel":
+        logger.info(f"📺 处理季度选择回调: {query.data}")
+        # 处理季度选择回调
+        from handlers.import_media import import_auto_season_selection
+        return await import_auto_season_selection(update, context)
+    
+    # 尝试解析JSON格式的回调数据
     try:
         callback_data = json.loads(query.data)
         action = callback_data.get("action")
@@ -183,8 +192,7 @@ async def handle_media_type_selection(update: Update, context: ContextTypes.DEFA
             
             # 显示导入方式选择
             from handlers.import_media import show_import_options
-            await show_import_options(update, context, context.user_data["import_auto_params"])
-            return ConversationHandler.END
+            return await show_import_options(update, context, context.user_data["import_auto_params"])
     
     # 检查是否已有平台ID
     existing_id = context.user_data.get("import_auto_id")
@@ -230,8 +238,7 @@ async def handle_media_type_selection(update: Update, context: ContextTypes.DEFA
             }
             
             from handlers.import_media import show_import_options
-            await show_import_options(update, context, context.user_data["import_auto_params"])
-            return ConversationHandler.END
+            return await show_import_options(update, context, context.user_data["import_auto_params"])
     
     # 既没有关键词也没有ID，这种情况不应该发生
     await query.edit_message_text(

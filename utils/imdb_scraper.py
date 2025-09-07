@@ -10,7 +10,7 @@ from bs4 import BeautifulSoup
 import re
 import asyncio
 import concurrent.futures
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import logging
 
 logger = logging.getLogger(__name__)
@@ -92,6 +92,11 @@ class IMDBScraper:
             html_content = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', html_content)
             
             return html_content
+        except Exception as e:
+            logger.error(f"清理HTML内容时出错: {e}")
+            return html_content
+    
+
         except Exception as e:
             logger.warning(f"HTML清理失败，返回原内容: {e}")
             return html_content
@@ -229,6 +234,8 @@ class IMDBScraper:
             # 根据权重判断类型
             if tv_score > movie_score:
                 info["media_type"] = "tv_series"
+                # IMDB没有可靠的API，季度信息使用默认逻辑
+                info["seasons"] = []
             else:
                 info["media_type"] = "movie"
             

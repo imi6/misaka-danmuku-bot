@@ -274,7 +274,13 @@ class BGMScraper:
             for selector in title_selectors:
                 title_elem = soup.select_one(selector)
                 if title_elem:
-                    info["title"] = title_elem.get_text().strip()
+                    title_text = title_elem.get_text().strip()
+                    info["title"] = title_text
+                    
+                    # 从标题中解析季度信息
+                    season_number = self._extract_season_from_title(title_text)
+                    if season_number:
+                        info["season"] = season_number
                     break
             
             # 提取年份
@@ -395,6 +401,50 @@ class BGMScraper:
         except Exception as e:
             logger.error(f"判断媒体类型时出错: {e}")
             return "tv_series"  # 默认返回电视剧
+    
+    def _extract_season_from_title(self, title: str) -> Optional[int]:
+        """从标题中提取季度信息
+        
+        Args:
+            title: 标题文本
+            
+        Returns:
+            Optional[int]: 季度数字，如果没有找到则返回None
+        """
+        if not title:
+            return None
+            
+        try:
+            # 季度匹配模式
+            season_patterns = [
+                r'第([一二三四五六七八九十\d]+)季',  # 第X季
+                r'Season\s*(\d+)',  # Season X
+                r'S(\d+)',  # SX
+                r'第([一二三四五六七八九十\d]+)部',  # 第X部
+                r'([一二三四五六七八九十\d]+)期',  # X期
+            ]
+            
+            for pattern in season_patterns:
+                match = re.search(pattern, title, re.IGNORECASE)
+                if match:
+                    season_str = match.group(1)
+                    
+                    # 处理中文数字
+                    chinese_numbers = {
+                        '一': 1, '二': 2, '三': 3, '四': 4, '五': 5,
+                        '六': 6, '七': 7, '八': 8, '九': 9, '十': 10
+                    }
+                    
+                    if season_str in chinese_numbers:
+                        return chinese_numbers[season_str]
+                    elif season_str.isdigit():
+                        return int(season_str)
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"解析季度信息时出错: {e}")
+            return None
 
 # 创建全局实例
 bgm_api = BGMAPI()

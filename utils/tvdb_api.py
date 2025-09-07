@@ -2,7 +2,7 @@ import requests
 import logging
 import os
 import urllib3
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from config import TVDB_API_KEY, TVDB_BASE_URL, TVDB_ENABLED
 
 # 禁用SSL警告
@@ -119,6 +119,61 @@ class TVDBAPI:
             logger.error(f"TVDB API请求时发生错误: {e}")
             raise TVDBAPIError(f"TVDB API请求时发生错误: {e}")
     
+    def get_tv_seasons(self, tvdb_id: str) -> Optional[List[Dict[str, Any]]]:
+        """获取TVDB电视剧的季度信息
+        
+        Args:
+            tvdb_id: TVDB电视剧ID
+            
+        Returns:
+            季度信息列表，每个季度包含season_number、name、episode_count等信息
+            如果获取失败返回None
+        """
+        try:
+            # 获取电视剧的基本信息，包含季度数据
+            endpoint = f"series/{tvdb_id}/extended"
+            data = self._make_request(endpoint)
+            
+            if not data:
+                logger.info(f"未找到TVDB ID '{tvdb_id}' 对应的电视剧信息")
+                return None
+            
+            seasons = data.get('seasons', [])
+            
+            # 过滤和格式化季度信息
+            valid_seasons = []
+            for season in seasons:
+                season_number = season.get('number', 0)
+                season_name = season.get('name', '').lower()
+                
+                # 过滤掉特殊季度：
+                # 1. season_number <= 0 (通常Specials是0)
+                # 2. name包含"special"、"specials"等关键词
+                if (season_number > 0 and 
+                    'special' not in season_name and 
+                    'extras' not in season_name and
+                    'bonus' not in season_name):
+                    
+                    valid_seasons.append({
+                        'season_number': season_number,
+                        'name': season.get('name', f'Season {season_number}'),
+                        'episode_count': len(season.get('episodes', [])),
+                        'air_date': season.get('year', ''),
+                        'overview': season.get('overview', '')
+                    })
+            
+            # 按季度号排序
+            valid_seasons.sort(key=lambda x: x['season_number'])
+            
+            logger.info(f"✅ TVDB电视剧季度信息获取成功，共{len(valid_seasons)}季")
+            return valid_seasons
+            
+        except TVDBAPIError:
+            raise
+        except Exception as e:
+            logger.error(f"获取TVDB季度信息时发生错误: {e}")
+            raise TVDBAPIError(f"获取TVDB季度信息时发生错误: {e}")
+    
     def search_by_slug(self, slug: str, media_type: str) -> Optional[Dict[str, Any]]:
         """通过slug搜索获取TVDB ID
         
@@ -207,6 +262,29 @@ async def search_tvdb_by_slug(slug: str, media_type: str) -> Optional[Dict[str, 
         return None
     except Exception as e:
         logger.error(f"TVDB搜索时发生未知错误: {e}")
+        return None
+
+def get_tvdb_tv_seasons(tvdb_id: str) -> Optional[List[Dict[str, Any]]]:
+    """获取TVDB电视剧的季度信息
+    
+    Args:
+        tvdb_id: TVDB电视剧ID
+        
+    Returns:
+        季度信息列表，如果未找到或API未启用返回None
+    """
+    if not TVDB_ENABLED:
+        logger.info("TVDB API未启用，跳过获取季度信息")
+        return None
+        
+    try:
+        api = get_tvdb_api()
+        return api.get_tv_seasons(tvdb_id)
+    except TVDBAPIError as e:
+        logger.error(f"TVDB季度信息获取失败: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"TVDB季度信息获取时发生未知错误: {e}")
         return None
 
 def validate_tvdb_api_key(api_key: str) -> bool:
