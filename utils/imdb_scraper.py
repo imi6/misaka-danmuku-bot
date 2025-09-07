@@ -66,6 +66,36 @@ class IMDBScraper:
                 "error": f"解析异常: {str(e)}"
             }
     
+    def _clean_html_content(self, html_content: str) -> str:
+        """清理HTML内容中可能导致解析错误的字符
+        
+        Args:
+            html_content: 原始HTML内容
+            
+        Returns:
+            str: 清理后的HTML内容
+        """
+        try:
+            # 移除或替换可能导致XML解析错误的字符
+            # 替换常见的问题实体
+            html_content = html_content.replace('&nbsp;', ' ')
+            html_content = html_content.replace('&amp;', '&')
+            html_content = html_content.replace('&lt;', '<')
+            html_content = html_content.replace('&gt;', '>')
+            html_content = html_content.replace('&quot;', '"')
+            html_content = html_content.replace('&apos;', "'")
+            
+            # 移除无效的XML实体引用
+            html_content = re.sub(r'&[^;\s]{1,10};?', '', html_content)
+            
+            # 移除控制字符（除了换行、回车、制表符）
+            html_content = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', html_content)
+            
+            return html_content
+        except Exception as e:
+            logger.warning(f"HTML清理失败，返回原内容: {e}")
+            return html_content
+    
     def _extract_media_info(self, html_content: str, imdb_id: str) -> Dict[str, Any]:
         """从 HTML 内容中提取媒体信息
         
@@ -76,7 +106,24 @@ class IMDBScraper:
         Returns:
             Dict: 提取的媒体信息
         """
-        soup = BeautifulSoup(html_content, 'html.parser')
+        try:
+            # 预处理HTML内容，清理可能导致解析错误的字符
+            cleaned_html = self._clean_html_content(html_content)
+            
+            # 使用lxml解析器，更好地处理格式错误的HTML
+            soup = BeautifulSoup(cleaned_html, 'lxml', from_encoding='utf-8')
+        except Exception as e:
+            logger.warning(f"lxml解析失败，回退到html.parser: {e}")
+            try:
+                # 回退到html.parser
+                cleaned_html = self._clean_html_content(html_content)
+                soup = BeautifulSoup(cleaned_html, 'html.parser')
+            except Exception as e2:
+                logger.error(f"HTML解析完全失败: {e2}")
+                return {
+                    "success": False,
+                    "error": f"HTML解析失败: {str(e2)}"
+                }
         
         info = {
             "success": True,

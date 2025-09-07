@@ -265,8 +265,8 @@ def _setup_handlers(application, handlers_module, callback_module):
     import_auto = handlers_module.import_auto
     import_auto_keyword_input = handlers_module.import_auto_keyword_input
     import_auto_id_input = handlers_module.import_auto_id_input
-    import_auto_season_input = handlers_module.import_auto_season_input
-    import_auto_episode_input = handlers_module.import_auto_episode_input
+    # import_auto_season_input = handlers_module.import_auto_season_input  # 已移除
+# import_auto_episode_input = handlers_module.import_auto_episode_input  # 已移除
     handle_import_callback = callback_module.handle_import_callback
     handle_get_episode_callback = callback_module.handle_get_episode_callback
     handle_episode_range_input = callback_module.handle_episode_range_input
@@ -373,30 +373,30 @@ def _setup_handlers(application, handlers_module, callback_module):
                     pattern=r'{"action": "import_auto_.*"}'
                 )
             ],
-            4: [
-                MessageHandler(  # IMPORT_AUTO_SEASON_INPUT = 4
-                    filters.TEXT & ~filters.COMMAND,
-                    _wrap_with_session_management(import_auto_season_input)
-                ),
-                CallbackQueryHandler(  # Handle all import_auto related callbacks
-                    _wrap_with_session_management(handle_import_auto_callback),
-                    pattern=r'{"action": "import_auto_.*"}'
-                )
-            ],
-            5: [
-                MessageHandler(  # IMPORT_AUTO_EPISODE_INPUT = 5
-                    filters.TEXT & ~filters.COMMAND,
-                    _wrap_with_session_management(import_auto_episode_input)
-                ),
-                CallbackQueryHandler(  # Handle continue import callbacks
-                    _wrap_with_session_management(handle_import_auto_callback),
-                    pattern=r'{"action": "(continue_season_import|continue_episode_import|finish_import)".*}'
-                )
-            ],
-            6: [CallbackQueryHandler(  # IMPORT_AUTO_METHOD_SELECTION = 6
-                _wrap_with_session_management(handle_import_auto_callback),
-                pattern=r'{"action": "import_auto_.*"}'
-            )],
+            # 4: [  # IMPORT_AUTO_SEASON_INPUT = 4（已移除）
+            #     MessageHandler(
+            #         filters.TEXT & ~filters.COMMAND,
+            #         _wrap_with_session_management(import_auto_season_input)
+            #     ),
+            #     CallbackQueryHandler(
+            #         _wrap_with_session_management(handle_import_auto_callback),
+            #         pattern=r'{"action": "import_auto_.*"}'
+            #     )
+            # ],
+            # 5: [  # IMPORT_AUTO_EPISODE_INPUT = 5（已移除）
+            #     MessageHandler(
+            #         filters.TEXT & ~filters.COMMAND,
+            #         _wrap_with_session_management(import_auto_episode_input)
+            #     ),
+            #     CallbackQueryHandler(
+            #         _wrap_with_session_management(handle_import_auto_callback),
+            #         pattern=r'{"action": "(continue_season_import|continue_episode_import|finish_import)".*}'
+            #     )
+            # ],
+            # 6: [CallbackQueryHandler(  # IMPORT_AUTO_METHOD_SELECTION = 6（已移除）
+            #     _wrap_with_session_management(handle_import_auto_callback),
+            #     pattern=r'{"action": "import_auto_method".*}'
+            # )],
         },
         fallbacks=[
             CommandHandler("cancel", _wrap_with_session_management(cancel)),

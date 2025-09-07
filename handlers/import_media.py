@@ -6,7 +6,7 @@ from telegram.ext import ContextTypes, ConversationHandler
 from utils.api import call_danmaku_api
 from utils.permission import check_user_permission
 from utils.url_parser import determine_input_type
-from utils.tmdb_api import get_media_type_suggestion, format_tmdb_results_info
+from utils.tmdb_api import get_media_type_suggestion, format_tmdb_results_info, format_tmdb_media_info
 from utils.tvdb_api import search_tvdb_by_slug
 from utils.imdb_scraper import get_imdb_info
 from utils.bgm_scraper import get_bgm_info
@@ -23,9 +23,9 @@ CALLBACK_DATA_MAX_LEN = 60
 # import_auto 对话状态
 IMPORT_AUTO_KEYWORD_INPUT = 2  # 关键词输入状态
 IMPORT_AUTO_ID_INPUT = 3  # ID输入状态
-IMPORT_AUTO_SEASON_INPUT = 4  # 季度输入状态
-IMPORT_AUTO_EPISODE_INPUT = 5  # 分集输入状态
-IMPORT_AUTO_METHOD_SELECTION = 6  # 导入方式选择状态 
+# IMPORT_AUTO_SEASON_INPUT = 4  # 季度输入状态（已移除）
+# IMPORT_AUTO_EPISODE_INPUT = 5  # 分集输入状态（已移除）
+# IMPORT_AUTO_METHOD_SELECTION = 6  # 导入方式选择状态（已移除） 
 
 
 @check_user_permission
@@ -127,11 +127,39 @@ async def process_auto_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
     input_info = determine_input_type(input_text)
     
     if input_info["type"] == "tmdb_url":
-        # TMDB URL：直接解析并导入
+        # TMDB URL：分步骤处理
         media_type = input_info["media_type"]
         tmdb_id = input_info["tmdb_id"]
         
-        await update.message.reply_text(f"🎬 检测到 TMDB {'电视剧' if media_type == 'tv_series' else '电影'}")
+        # 域名验证
+        from utils.url_parser import is_tmdb_url
+        if not is_tmdb_url(input_text):
+            await update.message.reply_text(
+                "❌ **域名验证失败**\n\n"
+                "请确保输入的是有效的TMDB链接：\n"
+                "• https://www.themoviedb.org/movie/xxx\n"
+                "• https://www.themoviedb.org/tv/xxx",
+                parse_mode="Markdown"
+            )
+            return ConversationHandler.END
+        
+        # 第一步：立即显示检测结果
+        type_icon = "📺" if media_type == 'tv_series' else "🎬"
+        await update.message.reply_text(f"{type_icon} 检测到 TMDB {'电视剧' if media_type == 'tv_series' else '电影'}\n\n🆔 ID: {tmdb_id}")
+        
+        # 第二步：尝试获取并显示详细信息
+        await update.message.reply_text("🔍 正在获取TMDB媒体信息...")
+        
+        try:
+            detailed_info = format_tmdb_media_info(tmdb_id, media_type)
+            await update.message.reply_text(detailed_info)
+        except Exception as e:
+            logger.warning(f"TMDB信息解析失败，直接使用ID导入: {e}")
+            await update.message.reply_text(
+                f"⚠️ **TMDB信息解析失败，将直接使用ID导入**\n\n"
+                f"📋 TMDB ID: {tmdb_id}\n"
+                f"🔄 跳过详细信息获取，直接进行导入..."
+            )
         
         if media_type == "movie":
             # 电影：直接导入
@@ -154,14 +182,31 @@ async def process_auto_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
                 "searchTerm": tmdb_id,
                 "mediaType": media_type
             })
-            return IMPORT_AUTO_METHOD_SELECTION
+            return ConversationHandler.END
     
     elif input_info["type"] == "tvdb_url":
-        # TVDB URL：通过API获取数字ID后导入
+        # TVDB URL：分步骤处理
         media_type = input_info["media_type"]
         slug = input_info["slug"]
         
-        await update.message.reply_text(f"📺 检测到 TVDB {'电视剧' if media_type == 'tv_series' else '电影'}\n\n正在查询TVDB API获取数字ID...")
+        # 域名验证
+        from utils.url_parser import is_tvdb_url
+        if not is_tvdb_url(input_text):
+            await update.message.reply_text(
+                "❌ **域名验证失败**\n\n"
+                "请确保输入的是有效的TVDB链接：\n"
+                "• https://www.thetvdb.com/series/xxx\n"
+                "• https://www.thetvdb.com/movies/xxx",
+                parse_mode="Markdown"
+            )
+            return ConversationHandler.END
+        
+        # 第一步：立即显示检测结果
+        type_icon = "📺" if media_type == 'tv_series' else "🎬"
+        await update.message.reply_text(f"{type_icon} 检测到 TVDB {'电视剧' if media_type == 'tv_series' else '电影'}")
+        
+        # 第二步：显示正在查询的状态
+        await update.message.reply_text("🔍 正在查询TVDB API获取数字ID...")
         
         # 通过API获取数字ID
         tvdb_result = await search_tvdb_by_slug(slug, media_type)
@@ -186,10 +231,21 @@ async def process_auto_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
                 tvdb_id = str(raw_tvdb_id)
             title = tvdb_result.get("name", "未知标题")
             
-            await update.message.reply_text(f"✅ TVDB查询成功\n\n📺 标题: {title}\nID: {tvdb_id}\n类型: {'电视剧' if media_type == 'tv_series' else '电影'}")
+            type_icon = "📺" if media_type == 'tv_series' else "🎬"
+            type_name = "电视剧" if media_type == 'tv_series' else "电影"
             
+            await update.message.reply_text(
+                f"✅ **TVDB查询成功**\n\n"
+                f"🎬 标题: {title}\n"
+                f"🆔 ID: `{tvdb_id}`\n"
+                f"{type_icon} 类型: {type_name}\n\n"
+                f"🚀 开始自动导入...",
+                parse_mode="Markdown"
+            )
+            
+            # 根据媒体类型决定导入方式
             if media_type == "movie":
-                # 电影：直接导入
+                # 电影类型：直接导入
                 import_params = {
                     "searchType": "tvdb",
                     "searchTerm": tvdb_id,
@@ -199,7 +255,7 @@ async def process_auto_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
                 await call_import_auto_api(update, context, import_params)
                 return ConversationHandler.END
             else:
-                # 电视剧：显示导入方式选择
+                # 电视剧类型：显示导入方式选择
                 context.user_data["import_auto_search_type"] = "tvdb"
                 context.user_data["import_auto_id"] = tvdb_id
                 context.user_data["import_auto_media_type"] = media_type
@@ -209,16 +265,32 @@ async def process_auto_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
                     "searchTerm": tvdb_id,
                     "mediaType": media_type
                 })
-                return IMPORT_AUTO_METHOD_SELECTION
+                return ConversationHandler.END
         else:
             await update.message.reply_text(f"❌ TVDB查询失败\n\n无法找到slug '{slug}' 对应的媒体信息，请检查链接是否正确。")
             return ConversationHandler.END
     
     elif input_info["type"] == "douban_url":
-        # 豆瓣链接：通过爬虫获取媒体信息并自动识别类型
+        # 豆瓣链接：分步骤处理
         douban_id = input_info["douban_id"]
         
-        await update.message.reply_text(f"🎭 检测到豆瓣链接\n\n📋 ID: {douban_id}\n\n🔍 正在获取豆瓣媒体信息...")
+        # 域名验证
+        from utils.url_parser import is_douban_url
+        if not is_douban_url(input_text):
+            await update.message.reply_text(
+                "❌ **域名验证失败**\n\n"
+                "请确保输入的是有效的豆瓣链接：\n"
+                "• https://movie.douban.com/subject/xxx/\n"
+                "• https://m.douban.com/movie/subject/xxx/",
+                parse_mode="Markdown"
+            )
+            return ConversationHandler.END
+        
+        # 第一步：立即显示检测结果
+        await update.message.reply_text(f"🎭 检测到豆瓣链接\n\n🆔 ID: {douban_id}")
+        
+        # 第二步：显示正在获取信息的状态
+        await update.message.reply_text("🔍 正在获取豆瓣媒体信息...")
         
         # 通过爬虫获取豆瓣媒体信息
         from utils.douban_scraper import get_douban_media_info
@@ -239,18 +311,27 @@ async def process_auto_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
                 else:
                     type_name = '电影'
                 
+                # 根据媒体类型显示对应图标
+                if media_type == "movie":
+                    type_icon = "🎬"
+                    type_name = "电影"
+                else:
+                    type_icon = "📺"
+                    type_name = "电视剧"
+                
                 await update.message.reply_text(
                     f"✅ **豆瓣信息获取成功**\n\n"
                     f"🎬 标题: {media_title}\n"
                     f"📅 年份: {media_year}\n"
-                    f"🎭 类型: {type_name}\n"
+                    f"{type_icon} 类型: {type_name}\n"
                     f"⭐ 评分: {rating}\n\n"
-                    "",
+                    f"🚀 开始自动导入...",
                     parse_mode="Markdown"
                 )
                 
+                # 根据媒体类型决定导入方式
                 if media_type == "movie":
-                    # 电影：直接导入
+                    # 电影类型：直接导入
                     import_params = {
                         "searchType": "douban",
                         "searchTerm": douban_id,
@@ -260,7 +341,7 @@ async def process_auto_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
                     await call_import_auto_api(update, context, import_params)
                     return ConversationHandler.END
                 else:
-                    # 电视剧：显示导入方式选择
+                    # 电视剧类型：显示导入方式选择
                     context.user_data["import_auto_search_type"] = "douban"
                     context.user_data["import_auto_id"] = douban_id
                     context.user_data["import_auto_media_type"] = media_type
@@ -270,21 +351,28 @@ async def process_auto_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
                         "searchTerm": douban_id,
                         "mediaType": media_type
                     })
-                    return IMPORT_AUTO_METHOD_SELECTION
+                    return ConversationHandler.END
             else:
-                # 豆瓣信息获取失败
+                # 豆瓣信息获取失败，跳过解析步骤，直接使用ID导入
                 error_msg = douban_info.get('error', '未知错误') if douban_info else '网络请求失败'
+                logger.warning(f"豆瓣信息解析失败，直接使用ID导入: {error_msg}")
                 
                 await update.message.reply_text(
-                    f"❌ **豆瓣信息获取失败**\n\n"
-                    f"无法获取豆瓣ID '{douban_id}' 的媒体信息。\n\n"
-                    f"💡 **错误信息:** {error_msg}\n\n"
-                    f"🔄 **建议:**\n"
-                    f"• 检查豆瓣链接是否正确\n"
-                    f"• 稍后重试\n"
-                    f"• 使用关键词搜索",
+                    f"⚠️ **豆瓣信息解析失败，将直接使用ID导入**\n\n"
+                    f"📋 豆瓣ID: `{douban_id}`\n"
+                    f"📺 默认按电视剧类型导入\n\n"
+                    f"🔄 跳过详细信息获取，直接进行导入...",
                     parse_mode="Markdown"
                 )
+                
+                # 默认按电视剧类型导入
+                import_params = {
+                    "searchType": "douban",
+                    "searchTerm": douban_id,
+                    "mediaType": "tv",
+                    "importMethod": "auto"
+                }
+                await call_import_auto_api(update, context, import_params)
                 return ConversationHandler.END
                 
         except Exception as e:
@@ -305,25 +393,36 @@ async def process_auto_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
             return ConversationHandler.END
     
     elif input_info["type"] == "imdb_url":
-        # IMDB链接：通过爬虫获取媒体信息并自动识别类型
+        # IMDB链接：分步骤处理
         imdb_id = input_info["imdb_id"]
         media_type = input_info.get("media_type")  # 从URL ref参数获取的类型
+        
+        # 域名验证
+        from utils.url_parser import is_imdb_url
+        if not is_imdb_url(input_text):
+            await update.message.reply_text(
+                "❌ **域名验证失败**\n\n"
+                "请确保输入的是有效的IMDB链接：\n"
+                "• https://www.imdb.com/title/ttxxxxxxx/\n"
+                "• https://m.imdb.com/title/ttxxxxxxx/",
+                parse_mode="Markdown"
+            )
+            return ConversationHandler.END
+        
+        # 第一步：立即显示检测结果
+        await update.message.reply_text(f"🌟 检测到IMDB链接\n\n🆔 ID: {imdb_id}")
         
         if media_type:
             # 从链接参数识别到类型，跳过爬虫直接导入
             type_name = '电视剧/动漫' if media_type == 'tv' else '电影'
-            await update.message.reply_text(
-                f"🎬 检测到IMDB链接\n\n"
-                f"📋 ID: {imdb_id}\n"
-                f"🎭 类型: {type_name}\n\n"
-            )
+            await update.message.reply_text(f"🎭 类型: {type_name}")
             
             # 转换媒体类型格式
             if media_type == 'tv':
                 media_type = 'tv_series'
         else:
             # 无法从链接识别类型，使用爬虫获取信息
-            await update.message.reply_text(f"🎬 检测到IMDB链接\n\n📋 ID: {imdb_id}\n\n🔍 正在获取IMDB媒体信息...")
+            await update.message.reply_text("🔍 正在获取IMDB媒体信息...")
             
             try:
                 imdb_info = get_imdb_info(imdb_id)
@@ -405,13 +504,28 @@ async def process_auto_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
                 "searchTerm": imdb_id,
                 "mediaType": media_type
             })
-            return IMPORT_AUTO_METHOD_SELECTION
+            return ConversationHandler.END
     
     elif input_info["type"] == "bgm_url":
-        # BGM链接：通过爬虫获取媒体信息并自动识别类型
+        # BGM链接：分步骤处理
+        bgm_url = input_text  # 使用原始输入文本作为URL
         bgm_id = input_info["bgm_id"]
         
-        await update.message.reply_text(f"🎯 检测到BGM链接\n\n📋 ID: {bgm_id}\n\n🔍 正在获取BGM媒体信息...")
+        # 验证域名
+        from utils.url_parser import is_bgm_url
+        if not is_bgm_url(bgm_url):
+            await update.message.reply_text(
+                "❌ **无效的BGM链接**\n\n"
+                "请确保输入的是有效的BGM链接。",
+                parse_mode="Markdown"
+            )
+            return ConversationHandler.END
+        
+        # 第一步：立即显示检测结果
+        await update.message.reply_text(f"🎯 检测到BGM链接\n\n📋 BGM ID: `{bgm_id}`", parse_mode="Markdown")
+        
+        # 第二步：显示正在获取信息的状态
+        await update.message.reply_text("🔍 正在获取BGM媒体信息...")
         
         try:
             bgm_info = get_bgm_info(bgm_id)
@@ -429,18 +543,27 @@ async def process_auto_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
                 else:
                     type_name = '电影'
                 
+                # 根据媒体类型显示对应图标
+                if media_type == "movie":
+                    type_icon = "🎬"
+                    type_name = "电影"
+                else:
+                    type_icon = "📺"
+                    type_name = "电视剧/动漫"
+                
                 await update.message.reply_text(
                     f"✅ **BGM信息获取成功**\n\n"
                     f"🎬 标题: {media_title}\n"
                     f"📅 年份: {media_year}\n"
-                    f"🎭 类型: {type_name}\n"
+                    f"{type_icon} 类型: {type_name}\n"
                     f"⭐ 评分: {rating}\n\n"
-                    "",
+                    f"🚀 开始自动导入...",
                     parse_mode="Markdown"
                 )
                 
+                # 根据媒体类型决定导入方式
                 if media_type == "movie":
-                    # 电影：直接导入
+                    # 电影类型：直接导入
                     import_params = {
                         "searchType": "bangumi",
                         "searchTerm": bgm_id,
@@ -450,7 +573,7 @@ async def process_auto_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
                     await call_import_auto_api(update, context, import_params)
                     return ConversationHandler.END
                 else:
-                    # 电视剧：显示导入方式选择
+                    # 电视剧类型：显示导入方式选择
                     context.user_data["import_auto_search_type"] = "bangumi"
                     context.user_data["import_auto_id"] = bgm_id
                     context.user_data["import_auto_media_type"] = media_type
@@ -460,61 +583,135 @@ async def process_auto_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
                         "searchTerm": bgm_id,
                         "mediaType": media_type
                     })
-                    return IMPORT_AUTO_METHOD_SELECTION
+                    return ConversationHandler.END
             else:
-                # BGM信息获取失败
+                # BGM信息获取失败，跳过解析步骤，直接使用ID导入
                 error_msg = bgm_info.get('error', '未知错误') if bgm_info else '网络请求失败'
+                logger.warning(f"BGM信息解析失败，直接使用ID导入: {error_msg}")
                 
                 await update.message.reply_text(
-                    f"❌ **BGM信息获取失败**\n\n"
-                    f"无法获取BGM ID '{bgm_id}' 的媒体信息。\n\n"
-                    f"💡 **错误信息:** {error_msg}\n\n"
-                    f"🔄 **建议:**\n"
-                    f"• 检查BGM链接是否正确\n"
-                    f"• 稍后重试\n"
-                    f"• 使用关键词搜索",
+                    f"⚠️ **BGM信息解析失败，将直接使用ID导入**\n\n"
+                    f"📋 BGM ID: `{bgm_id}`\n"
+                    f"🔄 跳过详细信息获取，直接进行导入...",
                     parse_mode="Markdown"
                 )
+                
+                # 默认按电视剧类型导入（BGM主要是动漫）
+                import_params = {
+                    "searchType": "bangumi",
+                    "searchTerm": bgm_id,
+                    "mediaType": "tv_series",
+                    "importMethod": "auto"
+                }
+                await call_import_auto_api(update, context, import_params)
                 return ConversationHandler.END
                 
         except Exception as e:
             logger.error(f"BGM爬虫异常: bgm_id='{bgm_id}', error={str(e)}")
+            logger.warning(f"BGM信息解析异常，直接使用ID导入: {str(e)}")
             
             await update.message.reply_text(
-                f"❌ **BGM信息获取异常**\n\n"
-                f"处理BGM ID '{bgm_id}' 时发生错误。\n\n"
-                f"💡 **可能的原因:**\n"
-                f"• BGM网站访问限制\n"
-                f"• 网络连接问题\n"
-                f"• 页面结构变化\n\n"
-                f"🔄 **建议:**\n"
-                f"• 稍后重试\n"
-                f"• 使用其他搜索方式",
+                f"⚠️ **BGM信息解析异常，将直接使用ID导入**\n\n"
+                f"📋 BGM ID: `{bgm_id}`\n"
+                f"🔄 跳过详细信息获取，直接进行导入...",
                 parse_mode="Markdown"
             )
+            
+            # 默认按电视剧类型导入（BGM主要是动漫）
+            import_params = {
+                "searchType": "bangumi",
+                "searchTerm": bgm_id,
+                "mediaType": "tv_series",
+                "importMethod": "auto"
+            }
+            await call_import_auto_api(update, context, import_params)
             return ConversationHandler.END
     
     elif input_info["type"] == "tt_id":
         # tt 开头的 ID：使用 IMDB 搜索
         tt_id = input_info["value"]
         
-        await update.message.reply_text(f"🌟 检测到 IMDB ID: {tt_id}\n\n请选择媒体类型：")
+        await update.message.reply_text(f"🌟 检测到 IMDB ID: `{tt_id}`\n\n正在获取详细信息...", parse_mode="Markdown")
         
-        # 显示媒体类型选择
-        context.user_data["import_auto_search_type"] = "imdb"
-        context.user_data["import_auto_id"] = tt_id
-        
-        keyboard = [
-            [InlineKeyboardButton("📺 电视剧", callback_data=json.dumps({"action": "import_auto_media_type", "type": "tv_series"}, ensure_ascii=False))],
-            [InlineKeyboardButton("🎬 电影", callback_data=json.dumps({"action": "import_auto_media_type", "type": "movie"}, ensure_ascii=False))]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await update.message.reply_text(
-            "请选择媒体类型：",
-            reply_markup=reply_markup
-        )
-        return 2  # 等待媒体类型选择
+        try:
+            # 尝试获取IMDB详细信息
+            imdb_info = get_imdb_info(tt_id)
+            
+            if imdb_info and imdb_info.get('success'):
+                # 获取成功，显示详细信息
+                title = imdb_info.get('title', 'Unknown')
+                year = imdb_info.get('year', 'Unknown')
+                media_type = imdb_info.get('type', 'Unknown')
+                
+                # 根据检测到的类型自动导入
+                detected_type = "movie" if media_type.lower() in ["movie", "电影"] else "tv_series"
+                
+                # 根据媒体类型显示对应图标
+                if detected_type == "movie":
+                    type_icon = "🎬"
+                    type_name = "电影"
+                else:
+                    type_icon = "📺"
+                    type_name = "电视剧"
+                
+                await update.message.reply_text(
+                    f"✅ **IMDB信息获取成功**\n\n"
+                    f"🎬 标题: {title}\n"
+                    f"📅 年份: {year}\n"
+                    f"{type_icon} 类型: {type_name}\n\n"
+                    f"🚀 开始自动导入...",
+                    parse_mode="Markdown"
+                )
+                import_params = {
+                    "searchType": "imdb",
+                    "searchTerm": tt_id,
+                    "mediaType": detected_type,
+                    "importMethod": "auto"
+                }
+                await call_import_auto_api(update, context, import_params)
+                return ConversationHandler.END
+            else:
+                # IMDB信息获取失败，跳过解析步骤，直接使用ID导入
+                error_msg = imdb_info.get('error', '未知错误') if imdb_info else '网络请求失败'
+                logger.warning(f"IMDB信息解析失败，直接使用ID导入: {error_msg}")
+                
+                await update.message.reply_text(
+                    f"⚠️ **IMDB信息解析失败，将直接使用ID导入**\n\n"
+                    f"📋 IMDB ID: `{tt_id}`\n"
+                    f"🔄 跳过详细信息获取，直接进行导入...",
+                    parse_mode="Markdown"
+                )
+                
+                # 默认按电视剧类型导入
+                import_params = {
+                    "searchType": "imdb",
+                    "searchTerm": tt_id,
+                    "mediaType": "tv_series",
+                    "importMethod": "auto"
+                }
+                await call_import_auto_api(update, context, import_params)
+                return ConversationHandler.END
+                
+        except Exception as e:
+            logger.error(f"IMDB爬虫异常: tt_id='{tt_id}', error={str(e)}")
+            logger.warning(f"IMDB信息解析异常，直接使用ID导入: {str(e)}")
+            
+            await update.message.reply_text(
+                f"⚠️ **IMDB信息解析异常，将直接使用ID导入**\n\n"
+                f"📋 IMDB ID: `{tt_id}`\n"
+                f"🔄 跳过详细信息获取，直接进行导入...",
+                parse_mode="Markdown"
+            )
+            
+            # 默认按电视剧类型导入
+            import_params = {
+                "searchType": "imdb",
+                "searchTerm": tt_id,
+                "mediaType": "tv_series",
+                "importMethod": "auto"
+            }
+            await call_import_auto_api(update, context, import_params)
+            return ConversationHandler.END
     
     else:
         # 关键词搜索：检查是否启用TMDB辅助搜索
@@ -539,25 +736,23 @@ async def process_auto_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
             tmdb_info = None
         
         if suggested_type:
-            # TMDB建议了明确的类型，直接使用
-            type_name = "电视剧/动漫" if suggested_type == "tv_series" else "电影"
+            # TMDB建议了明确的类型，自动导入
+            type_name = "📺 电视剧/动漫" if suggested_type == "tv_series" else "🎬 电影"
             
             await update.message.reply_text(
-                f"🎯 **TMDB智能识别**\n\n{tmdb_info}\n\n✅ 自动选择类型：{type_name}\n\n请选择导入方式：",
+                f"🎯 **TMDB智能识别**\n\n{tmdb_info}\n\n✅ 自动识别类型：{type_name}\n\n🔄 正在自动导入...",
                 parse_mode="Markdown"
             )
             
-            # 保存导入参数
-            context.user_data["import_auto_media_type"] = suggested_type
-            context.user_data["import_auto_params"] = {
+            # 直接自动导入
+            import_params = {
                 "searchType": "keyword",
                 "searchTerm": keyword,
-                "mediaType": suggested_type
+                "mediaType": suggested_type,
+                "importMethod": "auto"
             }
-            
-            # 直接显示导入方式选择
-            await show_import_options(update, context, context.user_data["import_auto_params"])
-            return IMPORT_AUTO_METHOD_SELECTION
+            await call_import_auto_api(update, context, import_params)
+            return ConversationHandler.END
         else:
             # TMDB无法确定类型或未启用，显示手动选择
             message_text = f"🔍 **关键词搜索: {keyword}**\n\n"
@@ -611,42 +806,29 @@ async def import_auto_keyword_input(update: Update, context: ContextTypes.DEFAUL
         tmdb_info = None
     
     if suggested_type:
-        # TMDB建议了明确的类型，直接使用
-        type_name = "电视剧/动漫" if suggested_type == "tv_series" else "电影"
+        # TMDB建议了明确的类型，自动导入
+        type_name = "📺 电视剧/动漫" if suggested_type == "tv_series" else "🎬 电影"
         
+        # 根据类型显示对应图标
         if suggested_type == "movie":
-            # 电影类型：直接导入
-            await update.message.reply_text(
-                f"🎯 **TMDB智能识别**\n\n{tmdb_info}\n\n✅ 自动选择类型：{type_name}",
-                parse_mode="Markdown"
-            )
-            
-            import_params = {
-                "searchType": "keyword",
-                "searchTerm": keyword,
-                "mediaType": suggested_type,
-                "importMethod": "auto"
-            }
-            await call_import_auto_api(update, context, import_params)
-            return ConversationHandler.END
+            type_icon = "🎬"
         else:
-            # 电视剧类型：显示导入方式选择
-            await update.message.reply_text(
-                f"🎯 **TMDB智能识别**\n\n{tmdb_info}\n\n✅ 自动选择类型：{type_name}\n\n请选择导入方式：",
-                parse_mode="Markdown"
-            )
-            
-            # 保存导入参数
-            context.user_data["import_auto_media_type"] = suggested_type
-            context.user_data["import_auto_params"] = {
-                "searchType": "keyword",
-                "searchTerm": keyword,
-                "mediaType": suggested_type
-            }
-            
-            # 直接显示导入方式选择
-            await show_import_options(update, context, context.user_data["import_auto_params"])
-            return IMPORT_AUTO_METHOD_SELECTION
+            type_icon = "📺"
+        
+        await update.message.reply_text(
+            f"🎯 **TMDB智能识别**\n\n{tmdb_info}\n\n✅ 自动识别类型：{type_icon} {type_name}\n\n🚀 开始自动导入...",
+            parse_mode="Markdown"
+        )
+        
+        # 直接自动导入
+        import_params = {
+            "searchType": "keyword",
+            "searchTerm": keyword,
+            "mediaType": suggested_type,
+            "importMethod": "auto"
+        }
+        await call_import_auto_api(update, context, import_params)
+        return ConversationHandler.END
     else:
         # TMDB无法确定类型或未启用，显示手动选择
         message_text = f"🔍 **关键词搜索: {keyword}**\n\n"
@@ -675,6 +857,70 @@ async def import_auto_keyword_input(update: Update, context: ContextTypes.DEFAUL
         return 2  # 等待媒体类型选择
 
 
+def validate_platform_match(user_input: str, selected_platform: str) -> tuple[bool, str]:
+    """验证用户输入的链接是否与选择的平台匹配
+    
+    Args:
+        user_input: 用户输入的文本
+        selected_platform: 用户选择的平台 (tmdb, tvdb, bangumi, douban, imdb)
+        
+    Returns:
+        tuple: (是否匹配, 错误消息)
+    """
+    result = determine_input_type(user_input)
+    input_type = result.get('type')
+    
+    # 如果输入的是纯ID或关键词，则不需要验证
+    if input_type in ['keyword', 'tt_id'] or not input_type.endswith('_url'):
+        return True, ""
+    
+    # 平台映射
+    platform_mapping = {
+        'tmdb': 'tmdb_url',
+        'tvdb': 'tvdb_url', 
+        'bangumi': 'bgm_url',
+        'douban': 'douban_url',
+        'imdb': 'imdb_url'
+    }
+    
+    expected_type = platform_mapping.get(selected_platform)
+    if not expected_type:
+        return True, ""  # 未知平台，跳过验证
+    
+    if input_type != expected_type:
+        # 构建错误消息
+        platform_names = {
+            'tmdb': 'TMDB',
+            'tvdb': 'TVDB', 
+            'bangumi': 'BGM/Bangumi',
+            'douban': '豆瓣',
+            'imdb': 'IMDB'
+        }
+        
+        detected_platform = {
+            'tmdb_url': 'TMDB',
+            'tvdb_url': 'TVDB',
+            'bgm_url': 'BGM/Bangumi', 
+            'douban_url': '豆瓣',
+            'imdb_url': 'IMDB'
+        }.get(input_type, '未知')
+        
+        selected_name = platform_names.get(selected_platform, selected_platform)
+        
+        error_msg = (
+            f"❌ **平台不匹配**\n\n"
+            f"🎯 您选择的平台: **{selected_name}**\n"
+            f"🔍 检测到的平台: **{detected_platform}**\n\n"
+            f"💡 **解决方案:**\n"
+            f"• 请输入正确的 {selected_name} 链接\n"
+            f"• 或者输入纯 ID 进行搜索\n"
+            f"• 或者重新选择正确的平台"
+        )
+        return False, error_msg
+    
+    return True, ""
+
+
 async def import_auto_id_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """接收用户输入的平台ID或链接"""
     user_input = update.message.text.strip()
@@ -683,6 +929,12 @@ async def import_auto_id_input(update: Update, context: ContextTypes.DEFAULT_TYP
         return IMPORT_AUTO_ID_INPUT
     
     search_type = context.user_data.get("import_auto_search_type", "tmdb")
+    
+    # 验证平台匹配
+    is_valid, error_msg = validate_platform_match(user_input, search_type)
+    if not is_valid:
+        await update.message.reply_text(error_msg)
+        return IMPORT_AUTO_ID_INPUT  # 继续等待正确的输入
     
     # 解析输入类型
     result = determine_input_type(user_input)
@@ -725,7 +977,7 @@ async def import_auto_id_input(update: Update, context: ContextTypes.DEFAULT_TYP
             }
             
             await show_import_options(update, context, context.user_data["import_auto_params"])
-            return IMPORT_AUTO_METHOD_SELECTION
+            return ConversationHandler.END
         
     elif input_type == "imdb_url" and search_type == "imdb":
         # IMDB链接：使用解析出的ID并通过爬虫获取媒体类型
@@ -736,93 +988,6 @@ async def import_auto_id_input(update: Update, context: ContextTypes.DEFAULT_TYP
             f"📋 ID: {imdb_id}\n\n"
             f"🔍 正在获取IMDB媒体信息..."
         )
-    
-    elif input_type == "bgm_url" and search_type == "bangumi":
-        # BGM链接：使用解析出的ID并通过爬虫获取媒体类型
-        bgm_id = result['bgm_id']
-        
-        await update.message.reply_text(
-            f"🔗 **BGM链接解析成功**\n\n"
-            f"📋 ID: {bgm_id}\n\n"
-            f"🔍 正在获取BGM媒体信息..."
-        )
-        
-        # 通过爬虫获取BGM媒体信息
-        try:
-            bgm_info = get_bgm_info(bgm_id)
-            
-            if bgm_info and bgm_info.get('success'):
-                media_title = bgm_info.get('title', 'N/A')
-                media_year = bgm_info.get('year', 'N/A')
-                media_type = bgm_info.get('media_type', 'tv_series')
-                rating = bgm_info.get('rating', 'N/A')
-                
-                type_name = '电影' if media_type == 'movie' else '电视剧/动漫'
-                
-                await update.message.reply_text(
-                    f"✅ **BGM信息获取成功**\n\n"
-                    f"🎬 名称: {media_title}\n"
-                    f"📅 年份: {media_year}\n"
-                    f"⭐ 评分: {rating}\n"
-                    f"🎭 类型: {type_name}\n\n"
-                    f"✅ 自动使用检测到的类型进行导入..."
-                )
-                
-                # 保存解析结果
-                context.user_data["import_auto_id"] = bgm_id
-                context.user_data["import_auto_media_type"] = media_type
-                
-                if media_type == "movie":
-                    # 电影类型：直接导入
-                    import_params = {
-                        "searchType": search_type,
-                        "searchTerm": bgm_id,
-                        "mediaType": media_type,
-                        "importMethod": "auto"
-                    }
-                    await call_import_auto_api(update, context, import_params)
-                    return ConversationHandler.END
-                else:
-                    # 电视剧类型：显示导入方式选择
-                    context.user_data["import_auto_params"] = {
-                        "searchType": search_type,
-                        "searchTerm": bgm_id,
-                        "mediaType": media_type
-                    }
-                    
-                    await show_import_options(update, context, context.user_data["import_auto_params"])
-                    return IMPORT_AUTO_METHOD_SELECTION
-            else:
-                # BGM信息获取失败
-                error_msg = bgm_info.get('error', '未知错误') if bgm_info else '网络请求失败'
-                
-                await update.message.reply_text(
-                    f"❌ **BGM信息获取失败**\n\n"
-                    f"无法获取BGM ID '{bgm_id}' 的媒体信息。\n\n"
-                    f"💡 **错误信息:** {error_msg}\n\n"
-                    f"🔄 **建议:**\n"
-                    f"• 检查BGM链接是否正确\n"
-                    f"• 稍后重试\n"
-                    f"• 使用其他搜索方式",
-                    parse_mode="Markdown"
-                )
-                return ConversationHandler.END
-                
-        except Exception as e:
-            logger.error(f"BGM爬虫异常: {e}")
-            await update.message.reply_text(
-                f"❌ **BGM信息获取异常**\n\n"
-                f"处理BGM ID '{bgm_id}' 时发生异常。\n\n"
-                f"💡 **可能的原因:**\n"
-                f"• BGM网站访问限制\n"
-                f"• 网络连接问题\n"
-                f"• 页面结构变化\n\n"
-                f"🔄 **建议:**\n"
-                f"• 稍后重试\n"
-                f"• 使用其他搜索方式",
-                parse_mode="Markdown"
-            )
-            return ConversationHandler.END
         
         # 通过爬虫获取IMDB媒体信息
         try:
@@ -868,7 +1033,7 @@ async def import_auto_id_input(update: Update, context: ContextTypes.DEFAULT_TYP
                     }
                     
                     await show_import_options(update, context, context.user_data["import_auto_params"])
-                    return IMPORT_AUTO_METHOD_SELECTION
+                    return ConversationHandler.END
             else:
                 # IMDB信息获取失败
                 error_msg = imdb_info.get('error', '未知错误') if imdb_info else '网络请求失败'
@@ -951,7 +1116,7 @@ async def import_auto_id_input(update: Update, context: ContextTypes.DEFAULT_TYP
                     }
                     
                     await show_import_options(update, context, context.user_data["import_auto_params"])
-                    return IMPORT_AUTO_METHOD_SELECTION
+                    return ConversationHandler.END
             else:
                 # BGM信息获取失败
                 error_msg = bgm_info.get('error', '未知错误') if bgm_info else '网络请求失败'
@@ -1015,14 +1180,11 @@ async def import_auto_id_input(update: Update, context: ContextTypes.DEFAULT_TYP
                 genres = douban_info.get('genres', [])
                 rating = douban_info.get('rating', 'N/A')
                 
-                # 将豆瓣类型转换为标准类型
-                # 检查类型信息，豆瓣通常在genres中包含类型信息
-                genres_str = ' '.join(genres) if isinstance(genres, list) else str(genres)
-                if '电视剧' in genres_str or '剧集' in genres_str or '动画' in genres_str or '综艺' in genres_str:
-                    auto_detected_type = 'tv_series'
+                # 使用豆瓣爬虫返回的媒体类型（与process_auto_input保持一致）
+                auto_detected_type = douban_info.get('media_type', 'movie')
+                if auto_detected_type == 'tv_series':
                     type_name = '电视剧/动漫'
                 else:
-                    auto_detected_type = 'movie'
                     type_name = '电影'
                 
                 await update.message.reply_text(
@@ -1057,7 +1219,7 @@ async def import_auto_id_input(update: Update, context: ContextTypes.DEFAULT_TYP
                     }
                     
                     await show_import_options(update, context, context.user_data["import_auto_params"])
-                    return IMPORT_AUTO_METHOD_SELECTION
+                    return ConversationHandler.END
             else:
                 # 豆瓣信息获取失败
                 error_msg = douban_info.get('error', '未知错误') if douban_info else '网络请求失败'
@@ -1088,6 +1250,102 @@ async def import_auto_id_input(update: Update, context: ContextTypes.DEFAULT_TYP
                 f"• 使用其他搜索方式"
             )
             return ConversationHandler.END
+    
+    elif input_type == "bgm_url" and search_type == "bgm":
+        # BGM链接：通过爬虫获取媒体信息
+        bgm_id = result['bgm_id']
+        
+        await update.message.reply_text(
+            f"🔗 **BGM链接解析成功**\n\n"
+            f"📋 ID: {bgm_id}\n\n"
+            f"🔍 正在获取BGM媒体信息..."
+        )
+        
+        # 通过爬虫获取BGM媒体信息
+        try:
+            bgm_info = await get_bgm_info(bgm_id)
+            
+            if bgm_info and bgm_info.get('success'):
+                media_title = bgm_info.get('title', 'N/A')
+                media_year = bgm_info.get('year', 'N/A')
+                media_type = bgm_info.get('media_type', 'tv_series')
+                rating = bgm_info.get('rating', 'N/A')
+                
+                type_name = '电影' if media_type == 'movie' else '电视剧/动漫'
+                
+                await update.message.reply_text(
+                    f"✅ **BGM信息获取成功**\n\n"
+                    f"🎬 标题: {media_title}\n"
+                    f"📅 年份: {media_year}\n"
+                    f"🎭 类型: {type_name}\n"
+                    f"⭐ 评分: {rating}\n\n"
+                    f"✅ 自动使用检测到的类型进行导入..."
+                )
+                
+                # 保存解析结果
+                context.user_data["import_auto_id"] = bgm_id
+                context.user_data["import_auto_media_type"] = media_type
+                
+                if media_type == "movie":
+                    # 电影类型：直接导入
+                    import_params = {
+                        "searchType": search_type,
+                        "searchTerm": bgm_id,
+                        "mediaType": media_type,
+                        "importMethod": "auto"
+                    }
+                    await call_import_auto_api(update, context, import_params)
+                    return ConversationHandler.END
+                else:
+                    # 电视剧类型：显示导入方式选择
+                    context.user_data["import_auto_params"] = {
+                        "searchType": search_type,
+                        "searchTerm": bgm_id,
+                        "mediaType": media_type
+                    }
+                    
+                    await show_import_options(update, context, context.user_data["import_auto_params"])
+                    return ConversationHandler.END
+            else:
+                # BGM信息获取失败
+                error_msg = bgm_info.get('error', '未知错误') if bgm_info else '网络请求失败'
+                await update.message.reply_text(
+                    f"❌ **BGM信息获取失败**\n\n"
+                    f"🔍 ID: {bgm_id}\n"
+                    f"❗ 错误: {error_msg}\n\n"
+                    f"💡 **可能的原因:**\n"
+                    f"• BGM网站访问限制\n"
+                    f"• 网络连接问题\n"
+                    f"• 页面结构变化\n\n"
+                    f"🔄 **建议:**\n"
+                    f"• 稍后重试\n"
+                    f"• 使用其他搜索方式",
+                    parse_mode="Markdown"
+                )
+                return ConversationHandler.END
+        except Exception as e:
+            logger.error(f"BGM爬虫异常: {e}")
+            await update.message.reply_text(
+                f"❌ **BGM信息获取异常**\n\n"
+                f"🔍 ID: {bgm_id}\n"
+                f"❗ 异常: {str(e)}\n\n"
+                f"🔄 请稍后重试或使用其他搜索方式",
+                parse_mode="Markdown"
+            )
+            return ConversationHandler.END
+    
+    elif input_type == "tvdb_url" and search_type == "tvdb":
+        # TVDB链接：通过API查询获取数字ID
+        slug = result['slug']
+        auto_detected_type = result['media_type']
+        type_name = '电影' if auto_detected_type == 'movie' else '电视剧/动漫'
+        
+        await update.message.reply_text(
+            f"🔗 **TVDB链接解析成功**\n\n"
+            f"📋 Slug: {slug}\n"
+            f"🎭 检测到类型: {type_name}\n\n"
+            f"🔍 正在查询TVDB数字ID..."
+        )
         
         # 通过API查询获取数字ID
         logger.info(f"开始TVDB查询: slug='{slug}', media_type='{auto_detected_type}'")
@@ -1155,7 +1413,7 @@ async def import_auto_id_input(update: Update, context: ContextTypes.DEFAULT_TYP
                 }
                 
                 await show_import_options(update, context, context.user_data["import_auto_params"])
-                return IMPORT_AUTO_METHOD_SELECTION
+                return ConversationHandler.END
         else:
             # 记录详细的错误信息用于调试
             logger.error(f"TVDB查询失败: slug='{slug}', media_type='{auto_detected_type}', tvdb_info={tvdb_info}")
@@ -1226,7 +1484,7 @@ async def import_auto_id_input(update: Update, context: ContextTypes.DEFAULT_TYP
                         }
                         
                         await show_import_options(update, context, context.user_data["import_auto_params"])
-                        return IMPORT_AUTO_METHOD_SELECTION
+                        return ConversationHandler.END
                 else:
                     # BGM信息获取失败，回退到手动选择类型
                     error_msg = bgm_info.get('error', '未知错误') if bgm_info else '网络请求失败'
@@ -1275,88 +1533,17 @@ async def import_auto_id_input(update: Update, context: ContextTypes.DEFAULT_TYP
     return IMPORT_AUTO_ID_INPUT  # 等待媒体类型选择
 
 
-async def import_auto_season_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """接收用户输入的季度"""
-    try:
-        season = int(update.message.text.strip())
-        if season < 0:
-            raise ValueError("季度不能为负数")
-    except ValueError:
-        await update.message.reply_text("❌ 请输入有效的季度数字（如：1, 2, 3...）：")
-        return IMPORT_AUTO_SEASON_INPUT
-    
-    # 保存季度到上下文
-    context.user_data["import_auto_season"] = season
-    
-    # 检查是否为分集导入模式
-    episode_mode = context.user_data.get("import_auto_episode_mode")
-    
-    if episode_mode:
-        # 分集导入模式：继续输入集数
-        await update.message.reply_text(f"✅ 已选择第 {season} 季\n\n请输入要导入的集数（如：1, 2, 3...）：")
-        return IMPORT_AUTO_EPISODE_INPUT
-    else:
-        # 分季导入模式：直接调用API
-        import_params = context.user_data.get("import_auto_params", {})
-        import_params["season"] = season
-        import_params["importMethod"] = "season"  # 添加导入方式标识
-        
-        await call_import_auto_api_with_continue(update, context, import_params)
-        # 不结束对话，等待用户选择继续导入或完成
-        return IMPORT_AUTO_SEASON_INPUT
-
-
-async def import_auto_episode_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """接收用户输入的集数"""
-    try:
-        episode = int(update.message.text.strip())
-        if episode < 1:
-            raise ValueError("集数必须大于0")
-    except ValueError:
-        await update.message.reply_text("❌ 请输入有效的集数数字（如：1, 2, 3...）：")
-        return IMPORT_AUTO_EPISODE_INPUT
-    
-    # 保存集数到上下文
-    context.user_data["import_auto_episode"] = episode
-    
-    # 调用导入API
-    import_params = context.user_data.get("import_auto_params", {})
-    season = context.user_data.get("import_auto_season")
-    import_params["season"] = season
-    import_params["episode"] = episode
-    import_params["importMethod"] = "episode"  # 添加导入方式标识
-    
-    await call_import_auto_api_with_continue(update, context, import_params)
-    # 不结束对话，等待用户选择继续导入或完成
-    return IMPORT_AUTO_EPISODE_INPUT
+# 已移除import_auto_season_input和import_auto_episode_input函数，因为不再需要分季导入和分集导入功能
 
 
 async def show_import_options(update: Update, context: ContextTypes.DEFAULT_TYPE, params: dict):
-    """显示导入方式选择界面"""
+    """自动执行导入（移除选择界面，直接执行自动导入）"""
     # 保存参数到上下文
     context.user_data["import_auto_params"] = params
     
-    # 构建导入方式选择按钮
-    keyboard = [
-        [InlineKeyboardButton("🚀 自动导入", callback_data=json.dumps({"action": "import_auto_method", "method": "auto"}, ensure_ascii=False))],
-        [InlineKeyboardButton("📺 分季导入", callback_data=json.dumps({"action": "import_auto_method", "method": "season"}, ensure_ascii=False))],
-        [InlineKeyboardButton("🎬 分集导入", callback_data=json.dumps({"action": "import_auto_method", "method": "episode"}, ensure_ascii=False))]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    # 判断是消息还是回调查询
-    if update.callback_query:
-        # 回调查询：发送新消息
-        await update.callback_query.message.reply_text(
-            "请选择导入方式：",
-            reply_markup=reply_markup
-        )
-    else:
-        # 普通消息：直接回复
-        await update.message.reply_text(
-            "请选择导入方式：",
-            reply_markup=reply_markup
-        )
+    # 直接执行自动导入
+    params["importMethod"] = "auto"
+    await call_import_auto_api(update, context, params)
 
 
 async def call_import_auto_api(update: Update, context: ContextTypes.DEFAULT_TYPE, params: dict):
@@ -1436,73 +1623,5 @@ async def call_import_auto_api(update: Update, context: ContextTypes.DEFAULT_TYP
         await send_message(f"❌ 导入失败：{api_result['error']}")
 
 
-async def call_import_auto_api_with_continue(update: Update, context: ContextTypes.DEFAULT_TYPE, params: dict):
-    """调用/import/auto API（用于继续导入流程，不结束对话）"""
-    send_message = update.message.reply_text
-    send_message_with_markup = lambda text, markup: update.message.reply_text(text, reply_markup=markup)
-    
-    # 移除中间状态提示，直接调用API
-    
-    # 调用API
-    api_result = call_danmaku_api(
-        method="POST",
-        endpoint="/import/auto",
-        params=params
-    )
-    
-    # 处理API响应
-    if api_result["success"]:
-        success_message = f"✅ 导入成功！"
-        
-        # 根据导入方式提供继续导入的按钮
-        import_method = params.get("importMethod")
-        if import_method in ["season", "episode"]:
-            keyboard = []
-            
-            if import_method == "season":
-                # 分季导入：提供导入其他季度的选项
-                keyboard.append([
-                    InlineKeyboardButton(
-                        "📺 导入其他季度",
-                        callback_data=json.dumps({
-                            "action": "continue_season_import"
-                        }, ensure_ascii=False)
-                    )
-                ])
-            elif import_method == "episode":
-                # 分集导入：提供导入同季其他集数或其他季度的选项
-                keyboard.extend([
-                    [InlineKeyboardButton(
-                        "🎬 导入同季其他集数",
-                        callback_data=json.dumps({
-                            "action": "continue_episode_import",
-                            "same_season": True
-                        }, ensure_ascii=False)
-                    )],
-                    [InlineKeyboardButton(
-                        "📺 导入其他季度",
-                        callback_data=json.dumps({
-                            "action": "continue_episode_import",
-                            "same_season": False
-                        }, ensure_ascii=False)
-                    )]
-                ])
-            
-            # 添加结束按钮
-            keyboard.append([
-                InlineKeyboardButton(
-                    "✅ 完成导入",
-                    callback_data=json.dumps({
-                        "action": "finish_import"
-                    }, ensure_ascii=False)
-                )
-            ])
-            
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await send_message_with_markup(success_message, reply_markup)
-        else:
-            # 自动导入：直接显示成功消息
-            await send_message(success_message)
-    else:
-        await send_message(f"❌ 导入失败：{api_result['error']}")
+# 已移除call_import_auto_api_with_continue函数，因为不再需要分季导入和分集导入功能
     

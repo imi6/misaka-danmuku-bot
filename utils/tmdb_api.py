@@ -204,3 +204,115 @@ def format_tmdb_results_info(query: str) -> str:
         info_parts.append(f"最佳匹配: {title}{year_info} [{media_type}]")
     
     return "\n".join(info_parts)
+
+
+def get_tmdb_media_details(tmdb_id: str, media_type: str, language: str = 'zh-CN') -> Optional[Dict[str, Any]]:
+    """获取TMDB媒体详细信息
+    
+    Args:
+        tmdb_id: TMDB媒体ID
+        media_type: 媒体类型，'movie' 或 'tv_series'
+        language: 语言代码，默认中文
+        
+    Returns:
+        包含媒体详细信息的字典，如果获取失败返回None
+    """
+    if not TMDB_ENABLED:
+        logger.debug("TMDB API未启用，跳过获取详细信息")
+        return None
+    
+    try:
+        # 转换媒体类型
+        api_media_type = 'tv' if media_type == 'tv_series' else 'movie'
+        
+        url = f"{TMDB_BASE_URL}/{api_media_type}/{tmdb_id}"
+        params = {
+            'api_key': TMDB_API_KEY,
+            'language': language
+        }
+        
+        logger.info(f"🔍 获取TMDB媒体详细信息: ID={tmdb_id}, 类型={media_type}")
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        
+        data = response.json()
+        logger.info(f"✅ TMDB媒体详细信息获取成功")
+        return data
+        
+    except requests.exceptions.RequestException as e:
+        logger.error(f"❌ TMDB API请求失败: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"❌ TMDB媒体详细信息获取失败: {e}")
+        return None
+
+
+def format_tmdb_media_info(tmdb_id: str, media_type: str) -> str:
+    """格式化TMDB媒体详细信息用于显示
+    
+    Args:
+        tmdb_id: TMDB媒体ID
+        media_type: 媒体类型，'movie' 或 'tv_series'
+        
+    Returns:
+        格式化的媒体信息字符串
+    """
+    media_details = get_tmdb_media_details(tmdb_id, media_type)
+    
+    if not media_details:
+        return f"🎬 检测到 TMDB {'电视剧' if media_type == 'tv_series' else '电影'}\n\n❌ 无法获取详细信息"
+    
+    info_parts = []
+    type_name = '电视剧' if media_type == 'tv_series' else '电影'
+    info_parts.append(f"🎬 检测到 TMDB {type_name}")
+    info_parts.append("")
+    
+    # 标题
+    title = media_details.get('title') or media_details.get('name', '未知标题')
+    info_parts.append(f"📋 标题: {title}")
+    
+    # 原标题（如果不同）
+    original_title = media_details.get('original_title') or media_details.get('original_name')
+    if original_title and original_title != title:
+        info_parts.append(f"🌐 原标题: {original_title}")
+    
+    # 年份
+    if media_type == 'movie':
+        release_date = media_details.get('release_date', '')
+        if release_date:
+            year = release_date[:4]
+            info_parts.append(f"📅 上映年份: {year}")
+    else:
+        first_air_date = media_details.get('first_air_date', '')
+        if first_air_date:
+            year = first_air_date[:4]
+            info_parts.append(f"📅 首播年份: {year}")
+        
+        # 电视剧特有信息
+        seasons = media_details.get('number_of_seasons')
+        episodes = media_details.get('number_of_episodes')
+        if seasons:
+            info_parts.append(f"📺 季数: {seasons}季")
+        if episodes:
+            info_parts.append(f"🎞️ 总集数: {episodes}集")
+    
+    # 类型/流派
+    genres = media_details.get('genres', [])
+    if genres:
+        genre_names = [g.get('name', '') for g in genres if g.get('name')]
+        if genre_names:
+            info_parts.append(f"🎭 类型: {', '.join(genre_names)}")
+    
+    # 评分
+    vote_average = media_details.get('vote_average')
+    if vote_average:
+        info_parts.append(f"⭐ TMDB评分: {vote_average}/10")
+    
+    # 简介（截取前100字符）
+    overview = media_details.get('overview', '')
+    if overview:
+        if len(overview) > 100:
+            overview = overview[:100] + '...'
+        info_parts.append(f"📝 简介: {overview}")
+    
+    return "\n".join(info_parts)

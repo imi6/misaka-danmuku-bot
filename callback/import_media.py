@@ -15,9 +15,9 @@ INPUT_EPISODE_RANGE = 1  # 集数输入对话状态
 CALLBACK_DATA_MAX_LEN = 64  # Telegram Bot API限制
 IMPORT_AUTO_KEYWORD_INPUT = 2  # 关键词输入状态
 IMPORT_AUTO_ID_INPUT = 3  # ID输入状态
-IMPORT_AUTO_SEASON_INPUT = 4  # 季度输入状态
-IMPORT_AUTO_EPISODE_INPUT = 5  # 分集输入状态
-IMPORT_AUTO_METHOD_SELECTION = 6  # 导入方式选择状态
+# IMPORT_AUTO_SEASON_INPUT = 4  # 季度输入状态（已移除）
+# IMPORT_AUTO_EPISODE_INPUT = 5  # 分集输入状态（已移除）
+# IMPORT_AUTO_METHOD_SELECTION = 6  # 导入方式选择状态（已移除）
 
 
 @check_user_permission
@@ -87,12 +87,12 @@ async def handle_import_auto_callback(update: Update, context: ContextTypes.DEFA
             return await handle_search_type_selection(update, context, callback_data)
         elif action == "import_auto_media_type":
             return await handle_media_type_selection(update, context, callback_data)
-        elif action == "import_auto_method":
-            return await handle_import_method_selection(update, context, callback_data)
-        elif action == "continue_season_import":
-            return await handle_continue_season_import(update, context)
-        elif action == "continue_episode_import":
-            return await handle_continue_episode_import(update, context, callback_data)
+        # elif action == "import_auto_method":
+        #     return await handle_import_method_selection(update, context, callback_data)
+        # elif action == "continue_season_import":
+        #     return await handle_continue_season_import(update, context)
+        # elif action == "continue_episode_import":
+        #     return await handle_continue_episode_import(update, context, callback_data)
         elif action == "finish_import":
             return await handle_finish_import(update, context)
         else:
@@ -184,7 +184,7 @@ async def handle_media_type_selection(update: Update, context: ContextTypes.DEFA
             # 显示导入方式选择
             from handlers.import_media import show_import_options
             await show_import_options(update, context, context.user_data["import_auto_params"])
-            return IMPORT_AUTO_METHOD_SELECTION
+            return ConversationHandler.END
     
     # 检查是否已有平台ID
     existing_id = context.user_data.get("import_auto_id")
@@ -231,7 +231,7 @@ async def handle_media_type_selection(update: Update, context: ContextTypes.DEFA
             
             from handlers.import_media import show_import_options
             await show_import_options(update, context, context.user_data["import_auto_params"])
-            return IMPORT_AUTO_METHOD_SELECTION
+            return ConversationHandler.END
     
     # 既没有关键词也没有ID，这种情况不应该发生
     await query.edit_message_text(
@@ -272,37 +272,7 @@ async def handle_media_type_callback(update: Update, context: ContextTypes.DEFAU
     return ConversationHandler.END
 
 
-async def handle_import_method_selection(update: Update, context: ContextTypes.DEFAULT_TYPE, callback_data: dict):
-    """处理导入方式选择"""
-    query = update.callback_query
-    method = callback_data.get("method")
-    
-    import_params = context.user_data.get("import_auto_params", {})
-    
-    if method == "auto":
-        # 自动导入：发送新消息
-        await query.message.reply_text("🚀 自动导入")
-        
-        import_params["importMethod"] = "auto"  # 添加导入方式标识
-        from handlers.import_media import call_import_auto_api
-        await call_import_auto_api(update, context, import_params)
-        return ConversationHandler.END
-        
-    elif method == "season":
-        # 分季导入：发送新消息提示输入季度
-        await query.message.reply_text(
-            "📺 分季导入\n\n请输入要导入的季度数字（如：1, 2, 3...）："
-        )
-        return IMPORT_AUTO_SEASON_INPUT
-        
-    elif method == "episode":
-        # 分集导入：发送新消息提示先输入季度
-        await query.message.reply_text(
-            "🎬 分集导入\n\n请先输入季度数字（如：1, 2, 3...）："
-        )
-        # 标记为分集导入模式
-        context.user_data["import_auto_episode_mode"] = True
-        return IMPORT_AUTO_SEASON_INPUT
+# 已移除handle_import_method_selection函数，因为不再需要导入方式选择
 
 
 @check_user_permission
@@ -872,39 +842,7 @@ async def cancel_episode_input(update: Update, context: ContextTypes.DEFAULT_TYP
 # ------------------------------
 # 继续导入相关处理函数
 # ------------------------------
-@check_user_permission
-async def handle_continue_season_import(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """处理继续分季导入"""
-    query = update.callback_query
-    await query.edit_message_text(
-        "📺 继续分季导入\n\n请输入要导入的季度数字（如：1, 2, 3...）："
-    )
-    return IMPORT_AUTO_SEASON_INPUT
-
-
-@check_user_permission
-async def handle_continue_episode_import(update: Update, context: ContextTypes.DEFAULT_TYPE, callback_data: dict):
-    """处理继续分集导入"""
-    query = update.callback_query
-    same_season = callback_data.get("same_season", False)
-    
-    if same_season:
-        # 导入同季其他集数：直接进入集数输入
-        current_season = context.user_data.get("import_auto_season", 1)
-        await query.edit_message_text(
-            f"🎬 继续导入第 {current_season} 季\n\n请输入要导入的集数（如：1, 2, 3...）："
-        )
-        # 标记为分集导入模式
-        context.user_data["import_auto_episode_mode"] = True
-        return IMPORT_AUTO_EPISODE_INPUT
-    else:
-        # 导入其他季度：先输入季度
-        await query.edit_message_text(
-            "📺 继续分集导入\n\n请先输入季度数字（如：1, 2, 3...）："
-        )
-        # 标记为分集导入模式
-        context.user_data["import_auto_episode_mode"] = True
-        return IMPORT_AUTO_SEASON_INPUT
+# 已移除handle_continue_season_import和handle_continue_episode_import函数，因为不再需要分季导入和分集导入功能
 
 
 @check_user_permission
