@@ -451,11 +451,15 @@ async def execute_episode_refresh(update: Update, context: ContextTypes.DEFAULT_
     anime_title = source_info.get('anime_title', '未知影视')
     source_name = source_info.get('source_name', '未知源')
     
+    # 转义Markdown特殊字符
+    anime_title = anime_title.replace('*', '\\*').replace('_', '\\_').replace('`', '\\`').replace('[', '\\[').replace(']', '\\]')
+    source_name = source_name.replace('*', '\\*').replace('_', '\\_').replace('`', '\\`').replace('[', '\\[').replace(']', '\\]')
+    
     total_count = len(episode_ids)
     logger.info(f"开始执行分集刷新：影视={anime_title}, 数据源={source_name}, 集数={total_count}, episodeIds={episode_ids}")
     
     await update.message.reply_text(
-        f"🔄 **开始刷新分集**\n\n"
+        f"🔄 *开始刷新分集*\n\n"
         f"📺 影视：{anime_title}\n"
         f"🎯 数据源：{source_name}\n"
         f"📊 刷新集数：{total_count} 集\n\n"
@@ -489,10 +493,10 @@ async def execute_episode_refresh(update: Update, context: ContextTypes.DEFAULT_
     
     # 显示结果
     result_message = (
-        f"✅ **分集刷新完成**\n\n"
+        f"✅ *分集刷新完成*\n\n"
         f"📺 影视：{anime_title}\n"
         f"🎯 数据源：{source_name}\n\n"
-        f"📊 **刷新统计：**\n"
+        f"📊 *刷新统计：*\n"
         f"• 成功：{success_count} 集\n"
         f"• 失败：{failed_count} 集\n"
         f"• 总计：{total_count} 集\n\n"
