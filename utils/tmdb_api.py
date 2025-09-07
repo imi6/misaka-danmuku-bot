@@ -216,6 +216,7 @@ def get_tmdb_media_details(tmdb_id: str, media_type: str, language: str = 'zh-CN
         
     Returns:
         包含媒体详细信息的字典，如果获取失败返回None
+        对于电视剧，会包含seasons信息，避免额外的API调用
     """
     if not TMDB_ENABLED:
         logger.debug("TMDB API未启用，跳过获取详细信息")
@@ -236,7 +237,28 @@ def get_tmdb_media_details(tmdb_id: str, media_type: str, language: str = 'zh-CN
         response.raise_for_status()
         
         data = response.json()
-        logger.info(f"✅ TMDB媒体详细信息获取成功")
+        
+        # 对于电视剧，直接从详情API获取季度信息，避免额外调用
+        if media_type == 'tv_series' and 'seasons' in data:
+            seasons = data.get('seasons', [])
+            # 过滤掉特殊季度（如第0季）并格式化
+            valid_seasons = []
+            for season in seasons:
+                season_number = season.get('season_number', 0)
+                if season_number > 0:  # 只保留正常季度
+                    valid_seasons.append({
+                        'season_number': season_number,
+                        'name': season.get('name', f'第{season_number}季'),
+                        'episode_count': season.get('episode_count', 0),
+                        'air_date': season.get('air_date', ''),
+                        'overview': season.get('overview', '')
+                    })
+            # 将处理后的季度信息添加到返回数据中
+            data['processed_seasons'] = valid_seasons
+            logger.info(f"✅ TMDB电视剧详细信息获取成功，包含{len(valid_seasons)}季信息")
+        else:
+            logger.info(f"✅ TMDB媒体详细信息获取成功")
+            
         return data
         
     except requests.exceptions.RequestException as e:
@@ -263,20 +285,21 @@ def get_tmdb_tv_seasons(tmdb_id: str, language: str = 'zh-CN') -> Optional[List[
         return None
     
     try:
-        url = f"{TMDB_BASE_URL}/tv/{tmdb_id}"
-        params = {
-            'api_key': TMDB_API_KEY,
-            'language': language
-        }
+        # 优化：直接使用get_tmdb_media_details获取详情，避免重复API调用
+        media_details = get_tmdb_media_details(tmdb_id, 'tv_series', language)
         
-        logger.info(f"🔍 获取TMDB电视剧季度信息: ID={tmdb_id}")
-        response = requests.get(url, params=params, timeout=10)
-        response.raise_for_status()
+        if not media_details:
+            logger.error(f"❌ 无法获取TMDB电视剧详细信息: ID={tmdb_id}")
+            return None
         
-        data = response.json()
-        seasons = data.get('seasons', [])
+        # 如果已经处理过季度信息，直接返回
+        if 'processed_seasons' in media_details:
+            valid_seasons = media_details['processed_seasons']
+            logger.info(f"✅ 使用已处理的TMDB季度信息，共{len(valid_seasons)}季")
+            return valid_seasons
         
-        # 过滤掉特殊季度（如第0季）
+        # 如果没有处理过，手动处理季度信息
+        seasons = media_details.get('seasons', [])
         valid_seasons = []
         for season in seasons:
             season_number = season.get('season_number', 0)
@@ -292,9 +315,6 @@ def get_tmdb_tv_seasons(tmdb_id: str, language: str = 'zh-CN') -> Optional[List[
         logger.info(f"✅ TMDB电视剧季度信息获取成功，共{len(valid_seasons)}季")
         return valid_seasons
         
-    except requests.exceptions.RequestException as e:
-        logger.error(f"❌ TMDB API请求失败: {e}")
-        return None
     except Exception as e:
         logger.error(f"❌ TMDB季度信息获取失败: {e}")
         return None

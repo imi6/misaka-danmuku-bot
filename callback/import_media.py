@@ -125,7 +125,12 @@ async def handle_search_type_selection(update: Update, context: ContextTypes.DEF
     if search_type == "keyword":
         # 关键词搜索：直接提示输入关键词
         await query.edit_message_text(
-            "🔍 **关键词搜索**\n\n请输入搜索关键词："
+            "🔍 **关键词搜索**\n\n"
+            "请输入影视作品名称：\n\n"
+            "💡 **智能功能**：\n"
+            "• 自动识别电影/电视剧类型\n"
+            "• 电视剧自动提供季度选择\n"
+            "• 支持中英文搜索"
         )
         return IMPORT_AUTO_KEYWORD_INPUT
     else:

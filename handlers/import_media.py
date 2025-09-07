@@ -6,7 +6,7 @@ from telegram.ext import ContextTypes, ConversationHandler
 from utils.api import call_danmaku_api
 from utils.permission import check_user_permission
 from utils.url_parser import determine_input_type
-from utils.tmdb_api import get_media_type_suggestion, format_tmdb_results_info, format_tmdb_media_info, get_tmdb_tv_seasons
+from utils.tmdb_api import get_media_type_suggestion, format_tmdb_results_info, format_tmdb_media_info, get_tmdb_tv_seasons, get_tmdb_media_details
 from utils.tvdb_api import search_tvdb_by_slug, get_tvdb_tv_seasons
 from utils.imdb_scraper import get_imdb_info
 from utils.bgm_scraper import get_bgm_info
@@ -113,7 +113,11 @@ async def import_auto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await update.message.reply_text(
-        "🚀 **自动导入媒体**\n\n请选择搜索类型：\n\n💡 **提示**：你也可以直接使用 `/auto 关键词` 或 `/auto 平台链接` 进行快速导入\n\n🔗 **支持的平台链接**：TMDB、TVDB、豆瓣、IMDB、Bangumi(BGM)",
+        "🤖 **自动导入功能**\n\n"
+        "请选择搜索方式：\n\n"
+        "• 🔍 **关键词搜索**：输入影视名称，TMDB智能识别类型和季度\n"
+        "• 🆔 **平台ID**：直接使用各平台的ID或链接，支持季度选择\n\n"
+        "💡 **快速导入**：直接使用 `/auto 关键词` 或 `/auto 平台链接`",
         reply_markup=reply_markup,
         parse_mode="Markdown"
     )
@@ -149,11 +153,21 @@ async def import_auto_season_selection(update: Update, context: ContextTypes.DEF
     """处理季度选择"""
     query = update.callback_query
     logger.info(f"🎭 进入季度选择处理函数，回调数据: {query.data}")
-    await query.answer()
+    logger.info(f"🔍 用户数据上下文: {context.user_data}")
+    
+    try:
+        await query.answer()
+        logger.info(f"✅ 回调查询应答成功")
+    except Exception as answer_error:
+        logger.error(f"❌ 回调查询应答失败: {answer_error}")
     
     if query.data == "cancel":
         logger.info("❌ 用户取消导入操作")
-        await query.edit_message_text("❌ 已取消导入操作")
+        try:
+            await query.edit_message_text("❌ 已取消导入操作")
+            logger.info("✅ 取消消息发送成功")
+        except Exception as cancel_error:
+            logger.error(f"❌ 取消消息发送失败: {cancel_error}")
         return ConversationHandler.END
     
     if query.data.startswith("season_"):
@@ -162,29 +176,54 @@ async def import_auto_season_selection(update: Update, context: ContextTypes.DEF
             logger.info(f"✅ 用户选择季度: {season_number}")
             context.user_data["selected_season"] = season_number
             
-            await query.edit_message_text(
-                f"✅ **已选择第{season_number}季**\n\n"
-                f"🚀 开始导入选定季度的内容..."
-            )
+            try:
+                await query.edit_message_text(
+                    f"✅ **已选择第{season_number}季**\n\n"
+                    f"🚀 开始导入选定季度的内容..."
+                )
+                logger.info(f"✅ 季度选择确认消息发送成功")
+            except Exception as edit_error:
+                logger.error(f"❌ 季度选择确认消息发送失败: {edit_error}")
             
             # 获取导入参数并添加季度信息
             import_params = context.user_data.get("import_auto_params", {})
+            logger.info(f"📋 原始导入参数: {import_params}")
             import_params["season"] = season_number
+            logger.info(f"📋 添加季度后的导入参数: {import_params}")
             
             # 调用导入API
-            await call_import_auto_api_with_query(query, context, import_params)
+            logger.info(f"🚀 准备调用导入API")
+            await call_import_auto_api(update, context, import_params)
+            logger.info(f"✅ 导入API调用完成")
             return ConversationHandler.END
             
-        except ValueError:
-            await query.edit_message_text("❌ 无效的季度选择")
+        except ValueError as value_error:
+            logger.error(f"❌ 季度数字解析失败: {value_error}")
+            try:
+                await query.edit_message_text("❌ 无效的季度选择")
+            except Exception as error_msg_error:
+                logger.error(f"❌ 错误消息发送失败: {error_msg_error}")
+            return ConversationHandler.END
+        except Exception as season_error:
+            logger.error(f"❌ 季度选择处理异常: {season_error}")
+            try:
+                await query.edit_message_text(f"❌ 处理季度选择时出错: {str(season_error)}")
+            except Exception as error_msg_error:
+                logger.error(f"❌ 异常消息发送失败: {error_msg_error}")
             return ConversationHandler.END
     
-    await query.edit_message_text("❌ 无效的选择")
+    logger.warning(f"⚠️ 未识别的回调数据: {query.data}")
+    try:
+        await query.edit_message_text("❌ 无效的选择")
+    except Exception as invalid_error:
+        logger.error(f"❌ 无效选择消息发送失败: {invalid_error}")
     return ConversationHandler.END
 
 
 async def call_import_auto_api_with_query(query, context: ContextTypes.DEFAULT_TYPE, import_params: dict):
     """使用callback query调用导入API"""
+    logger.info(f"🔧 call_import_auto_api_with_query 开始执行，参数: {import_params}")
+    
     try:
         # 构建API请求参数
         api_params = {
@@ -197,8 +236,9 @@ async def call_import_auto_api_with_query(query, context: ContextTypes.DEFAULT_T
         # 如果有季度信息，添加到参数中
         if "season" in import_params:
             api_params["season"] = import_params["season"]
+            logger.info(f"📺 添加季度参数: season={import_params['season']}")
         
-        logger.info(f"🚀 开始调用导入API，参数: {api_params}")
+        logger.info(f"🚀 开始调用导入API，完整参数: {api_params}")
         
         # 调用API
         response = call_danmaku_api(
@@ -207,21 +247,55 @@ async def call_import_auto_api_with_query(query, context: ContextTypes.DEFAULT_T
             params=api_params
         )
         
+        logger.info(f"📡 API响应: {response}")
+        
+        # 处理API响应
         if response and response.get("success"):
             message = f"✅ **导入成功!**\n\n{response.get('message', '导入完成')}"
             if "data" in response and response["data"]:
                 data = response["data"]
                 if "imported_count" in data:
                     message += f"\n📊 导入数量: {data['imported_count']}"
+            logger.info(f"✅ 导入成功，消息: {message}")
         else:
             error_msg = response.get("message", "未知错误") if response else "API调用失败"
             message = f"❌ **导入失败**\n\n{error_msg}"
+            logger.error(f"❌ 导入失败，错误: {error_msg}")
         
-        await query.edit_message_text(message)
+        # 发送结果消息
+        try:
+            await query.edit_message_text(message, parse_mode="Markdown")
+            logger.info(f"📤 消息发送成功")
+        except Exception as msg_error:
+            logger.error(f"❌ 消息发送失败: {msg_error}")
+            # 如果编辑消息失败，尝试发送新消息
+            try:
+                await context.bot.send_message(
+                    chat_id=query.message.chat_id,
+                    text=message,
+                    parse_mode="Markdown"
+                )
+                logger.info(f"📤 新消息发送成功")
+            except Exception as new_msg_error:
+                logger.error(f"❌ 新消息发送也失败: {new_msg_error}")
         
     except Exception as e:
-        logger.error(f"❌ 导入API调用异常: {e}")
-        await query.edit_message_text(f"❌ **导入失败**\n\n系统错误: {str(e)}")
+        logger.error(f"❌ call_import_auto_api_with_query 执行异常: {e}")
+        try:
+            await query.edit_message_text(
+                f"❌ **系统错误**\n\n{str(e)}",
+                parse_mode="Markdown"
+            )
+        except Exception as error_msg_error:
+            logger.error(f"❌ 错误消息发送失败: {error_msg_error}")
+            try:
+                await context.bot.send_message(
+                    chat_id=query.message.chat_id,
+                    text=f"❌ **系统错误**\n\n{str(e)}",
+                    parse_mode="Markdown"
+                )
+            except Exception as final_error:
+                logger.error(f"❌ 最终错误消息发送失败: {final_error}")
     
     # 清理用户数据
     context.user_data.pop("import_auto_params", None)
@@ -841,23 +915,54 @@ async def process_auto_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
             tmdb_info = None
         
         if suggested_type:
-            # TMDB建议了明确的类型，自动导入
+            # TMDB建议了明确的类型
             type_name = "📺 电视剧/动漫" if suggested_type == "tv_series" else "🎬 电影"
             
             await update.message.reply_text(
-                f"🎯 **TMDB智能识别**\n\n{tmdb_info}\n\n✅ 自动识别类型：{type_name}\n\n🔄 正在自动导入...",
+                f"🎯 **TMDB智能识别**\n\n{tmdb_info}\n\n✅ 自动识别类型：{type_name}",
                 parse_mode="Markdown"
             )
             
-            # 直接自动导入
-            import_params = {
-                "searchType": "keyword",
-                "searchTerm": keyword,
-                "mediaType": suggested_type,
-                "importMethod": "auto"
-            }
-            await call_import_auto_api(update, context, import_params)
-            return ConversationHandler.END
+            # 获取最佳匹配的TMDB ID和详细信息
+            from utils.tmdb_api import search_tmdb_multi, get_tmdb_media_details
+            search_result = search_tmdb_multi(keyword)
+            best_match = search_result.get_best_match() if search_result else None
+            tmdb_id = str(best_match.get('id')) if best_match else None
+            
+            # 对于电视剧，预先获取详细信息（包含季度信息）以优化后续处理
+            if tmdb_id and suggested_type == "tv_series":
+                # 预先获取详细信息，这样后续的季度选择就不需要额外API调用
+                media_details = get_tmdb_media_details(tmdb_id, "tv_series")
+                if media_details and 'processed_seasons' in media_details:
+                    logger.info(f"🎯 预先获取TMDB季度信息成功，共{len(media_details['processed_seasons'])}季")
+            
+            # 构建导入参数
+            if tmdb_id and suggested_type == "tv_series":
+                # 电视剧且有TMDB ID：使用TMDB搜索
+                import_params = {
+                    "searchType": "tmdb",
+                    "searchTerm": tmdb_id,
+                    "mediaType": suggested_type,
+                    "importMethod": "auto"
+                }
+            else:
+                # 电影或无TMDB ID：使用关键词搜索
+                import_params = {
+                    "searchType": "keyword",
+                    "searchTerm": keyword,
+                    "mediaType": suggested_type,
+                    "importMethod": "auto"
+                }
+            
+            # 根据类型决定处理方式
+            if suggested_type == "movie":
+                # 电影类型：直接导入
+                await update.message.reply_text("🚀 开始自动导入...")
+                await call_import_auto_api(update, context, import_params)
+                return ConversationHandler.END
+            else:
+                # 电视剧类型：进入季度选择流程
+                return await show_import_options(update, context, import_params)
         else:
             # TMDB无法确定类型或未启用，显示手动选择
             message_text = f"🔍 **关键词搜索: {keyword}**\n\n"
@@ -865,12 +970,12 @@ async def process_auto_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
             if tmdb_info is None:
                 # TMDB未启用
                 message_text += "❓ 请手动选择媒体类型：\n\n"
-            elif tmdb_info != "🔍 TMDB未找到相关结果":
-                # TMDB启用但类型混合
-                message_text += f"{tmdb_info}\n\n⚠️ 类型混合，请手动选择：\n\n"
-            else:
+            elif tmdb_info == "🔍 TMDB未找到相关结果":
                 # TMDB启用但未找到结果
                 message_text += f"{tmdb_info}\n\n❓ 未找到TMDB数据，请手动选择媒体类型：\n\n"
+            else:
+                # TMDB启用但无法确定单一类型（可能是类型混合或其他原因）
+                message_text += f"{tmdb_info}\n\n❓ 请手动选择媒体类型：\n\n"
             
             keyboard = [
                 [InlineKeyboardButton("📺 电视剧/动漫", callback_data=json.dumps({"action": "import_auto_media_type", "type": "tv_series"}, ensure_ascii=False))],
@@ -911,7 +1016,7 @@ async def import_auto_keyword_input(update: Update, context: ContextTypes.DEFAUL
         tmdb_info = None
     
     if suggested_type:
-        # TMDB建议了明确的类型，自动导入
+        # TMDB建议了明确的类型
         type_name = "📺 电视剧/动漫" if suggested_type == "tv_series" else "🎬 电影"
         
         # 根据类型显示对应图标
@@ -921,19 +1026,50 @@ async def import_auto_keyword_input(update: Update, context: ContextTypes.DEFAUL
             type_icon = "📺"
         
         await update.message.reply_text(
-            f"🎯 **TMDB智能识别**\n\n{tmdb_info}\n\n✅ 自动识别类型：{type_icon} {type_name}\n\n🚀 开始自动导入...",
+            f"🎯 **TMDB智能识别**\n\n{tmdb_info}\n\n✅ 自动识别类型：{type_icon} {type_name}",
             parse_mode="Markdown"
         )
         
-        # 直接自动导入
-        import_params = {
-            "searchType": "keyword",
-            "searchTerm": keyword,
-            "mediaType": suggested_type,
-            "importMethod": "auto"
-        }
-        await call_import_auto_api(update, context, import_params)
-        return ConversationHandler.END
+        # 获取最佳匹配的TMDB ID和详细信息
+        from utils.tmdb_api import search_tmdb_multi, get_tmdb_media_details
+        search_result = search_tmdb_multi(keyword)
+        best_match = search_result.get_best_match() if search_result else None
+        tmdb_id = str(best_match.get('id')) if best_match else None
+        
+        # 对于电视剧，预先获取详细信息（包含季度信息）以优化后续处理
+        if tmdb_id and suggested_type == "tv_series":
+            # 预先获取详细信息，这样后续的季度选择就不需要额外API调用
+            media_details = get_tmdb_media_details(tmdb_id, "tv_series")
+            if media_details and 'processed_seasons' in media_details:
+                logger.info(f"🎯 预先获取TMDB季度信息成功，共{len(media_details['processed_seasons'])}季")
+        
+        # 构建导入参数
+        if tmdb_id and suggested_type == "tv_series":
+            # 电视剧且有TMDB ID：使用TMDB搜索
+            import_params = {
+                "searchType": "tmdb",
+                "searchTerm": tmdb_id,
+                "mediaType": suggested_type,
+                "importMethod": "auto"
+            }
+        else:
+            # 电影或无TMDB ID：使用关键词搜索
+            import_params = {
+                "searchType": "keyword",
+                "searchTerm": keyword,
+                "mediaType": suggested_type,
+                "importMethod": "auto"
+            }
+        
+        # 根据类型决定处理方式
+        if suggested_type == "movie":
+            # 电影类型：直接导入
+            await update.message.reply_text("🚀 开始自动导入...")
+            await call_import_auto_api(update, context, import_params)
+            return ConversationHandler.END
+        else:
+            # 电视剧类型：进入季度选择流程
+            return await show_import_options(update, context, import_params)
     else:
         # TMDB无法确定类型或未启用，显示手动选择
         message_text = f"🔍 **关键词搜索: {keyword}**\n\n"
@@ -1733,19 +1869,26 @@ async def show_import_options(update: Update, context: ContextTypes.DEFAULT_TYPE
         
         try:
             if search_type == "tmdb":
-                seasons = get_tmdb_tv_seasons(search_term)
-                # 获取基本媒体信息用于显示
-                try:
-                    from utils.tmdb_api import format_tmdb_media_info
-                    detailed_info = format_tmdb_media_info(search_term, "tv")
-                    # 从详细信息中提取标题和年份（简单解析）
-                    lines = detailed_info.split('\n')
-                    for line in lines:
-                        if '标题:' in line:
-                            media_info['title'] = line.split('标题:')[1].strip()
-                        elif '年份:' in line:
-                            media_info['year'] = line.split('年份:')[1].strip()
-                except Exception:
+                # 优化：直接从get_tmdb_media_details获取详情和季度信息
+                from utils.tmdb_api import get_tmdb_media_details
+                media_details = get_tmdb_media_details(search_term, "tv_series")
+                
+                if media_details:
+                    # 获取季度信息（优先使用已处理的季度信息）
+                    if 'processed_seasons' in media_details:
+                        seasons = media_details['processed_seasons']
+                    else:
+                        # 如果没有预处理，调用get_tmdb_tv_seasons
+                        seasons = get_tmdb_tv_seasons(search_term)
+                    
+                    # 提取媒体基本信息
+                    title = media_details.get('title') or media_details.get('name', f'TMDB ID: {search_term}')
+                    first_air_date = media_details.get('first_air_date', '')
+                    year = first_air_date[:4] if first_air_date else 'N/A'
+                    media_info = {'title': title, 'year': year}
+                else:
+                    # 如果获取详情失败，回退到原来的方式
+                    seasons = get_tmdb_tv_seasons(search_term)
                     media_info = {'title': f'TMDB ID: {search_term}', 'year': 'N/A'}
                     
             elif search_type == "tvdb":
