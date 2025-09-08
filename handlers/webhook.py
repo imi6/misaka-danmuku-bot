@@ -2,6 +2,7 @@ import logging
 import json
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from telegram import Bot
 from config import ConfigManager
 from handlers.import_url import get_library_data, search_video_by_keyword
@@ -485,16 +486,18 @@ class WebhookHandler:
             # 检查时间段判断机制：入库时间是否早于24小时
             if fetched_at:
                 try:
-                    # 解析fetchedAt时间（ISO 8601格式）
+                    # 解析fetchedAt时间（ISO 8601格式）并转换为上海时区
                     fetched_time = datetime.fromisoformat(fetched_at.replace('Z', '+00:00'))
-                    current_time = datetime.now(fetched_time.tzinfo)
-                    time_diff = current_time - fetched_time
+                    shanghai_tz = ZoneInfo('Asia/Shanghai')
+                    fetched_time_shanghai = fetched_time.astimezone(shanghai_tz)
+                    current_time_shanghai = datetime.now(shanghai_tz)
+                    time_diff = current_time_shanghai - fetched_time_shanghai
                     
                     if time_diff < timedelta(hours=24):
-                        logger.info(f"⏰ 电影入库时间在24小时内 ({time_diff}），跳过刷新 (源ID: {source_id})")
+                        logger.info(f"⏰ 电影入库时间在24小时内 ({time_diff}），跳过刷新 (源ID: {source_id}) [上海时区]")
                         return
                     else:
-                        logger.info(f"⏰ 电影入库时间超过24小时 ({time_diff}），执行刷新 (源ID: {source_id})")
+                        logger.info(f"⏰ 电影入库时间超过24小时 ({time_diff}），执行刷新 (源ID: {source_id}) [上海时区]")
                 except Exception as e:
                     logger.warning(f"⚠️ 解析入库时间失败，继续执行刷新: {e}")
             else:
@@ -607,16 +610,18 @@ class WebhookHandler:
                 # 检查时间段判断机制：入库时间是否早于24小时
                 if fetched_at:
                     try:
-                        # 解析fetchedAt时间（ISO 8601格式）
+                        # 解析fetchedAt时间（ISO 8601格式）并转换为上海时区
                         fetched_time = datetime.fromisoformat(fetched_at.replace('Z', '+00:00'))
-                        current_time = datetime.now(fetched_time.tzinfo)
-                        time_diff = current_time - fetched_time
+                        shanghai_tz = ZoneInfo('Asia/Shanghai')
+                        fetched_time_shanghai = fetched_time.astimezone(shanghai_tz)
+                        current_time_shanghai = datetime.now(shanghai_tz)
+                        time_diff = current_time_shanghai - fetched_time_shanghai
                         
                         if time_diff < timedelta(hours=24):
-                            logger.info(f"⏰ 第{episode}集入库时间在24小时内 ({time_diff}），跳过刷新")
+                            logger.info(f"⏰ 第{episode}集入库时间在24小时内 ({time_diff}），跳过刷新 [上海时区]")
                             continue
                         else:
-                            logger.info(f"⏰ 第{episode}集入库时间超过24小时 ({time_diff}），执行刷新")
+                            logger.info(f"⏰ 第{episode}集入库时间超过24小时 ({time_diff}），执行刷新 [上海时区]")
                     except Exception as e:
                         logger.warning(f"⚠️ 解析第{episode}集入库时间失败，继续执行刷新: {e}")
                 else:
