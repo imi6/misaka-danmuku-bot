@@ -206,6 +206,176 @@ def format_tmdb_results_info(query: str) -> str:
     return "\n".join(info_parts)
 
 
+def search_tv_series_by_name_year(series_name: str, year: Optional[str] = None, language: str = 'zh-CN') -> Optional[Dict[str, Any]]:
+    """通过剧集名称和年份搜索电视剧，返回最佳匹配的TMDB ID和详细信息
+    
+    Args:
+        series_name: 剧集名称
+        year: 年份（可选）
+        language: 语言代码，默认中文
+        
+    Returns:
+        包含TMDB ID和详细信息的字典，如果未找到匹配返回None
+        返回格式: {
+            'tmdb_id': str,
+            'name': str,
+            'original_name': str,
+            'first_air_date': str,
+            'year': str,
+            'overview': str,
+            'vote_average': float,
+            'number_of_seasons': int,
+            'number_of_episodes': int
+        }
+    """
+    if not TMDB_ENABLED:
+        logger.debug("TMDB API未启用，跳过电视剧搜索")
+        return None
+    
+    try:
+        url = f"{TMDB_BASE_URL}/search/tv"
+        params = {
+            'api_key': TMDB_API_KEY,
+            'query': series_name,
+            'language': language,
+            'page': 1
+        }
+        
+        # 如果提供了年份，添加到搜索参数中
+        if year:
+            params['first_air_date_year'] = year
+        
+        logger.info(f"🔍 通过TMDB搜索电视剧: {series_name}" + (f" ({year})" if year else ""))
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        
+        data = response.json()
+        results = data.get('results', [])
+        
+        if not results:
+            logger.info(f"❌ TMDB未找到匹配的电视剧: {series_name}")
+            return None
+        
+        # 寻找最佳匹配
+        best_match = None
+        best_score = 0
+        
+        for result in results:
+            score = 0
+            result_name = result.get('name', '')
+            result_original_name = result.get('original_name', '')
+            result_first_air_date = result.get('first_air_date', '')
+            result_year = result_first_air_date[:4] if result_first_air_date else ''
+            
+            # 名称匹配评分
+            if series_name.lower() in result_name.lower() or result_name.lower() in series_name.lower():
+                score += 50
+            if series_name.lower() in result_original_name.lower() or result_original_name.lower() in series_name.lower():
+                score += 30
+            
+            # 年份匹配评分
+            if year and result_year == year:
+                score += 40
+            elif year and result_year and abs(int(year) - int(result_year)) <= 1:
+                score += 20  # 允许1年误差
+            
+            # 受欢迎度加分
+            popularity = result.get('popularity', 0)
+            score += min(popularity / 10, 10)  # 最多加10分
+            
+            logger.debug(f"📊 匹配评分: {result_name} ({result_year}) - {score}分")
+            
+            if score > best_score:
+                best_score = score
+                best_match = result
+        
+        if not best_match or best_score < 30:  # 设置最低匹配分数阈值
+            logger.info(f"❌ TMDB未找到足够匹配的电视剧: {series_name} (最高分数: {best_score})")
+            return None
+        
+        # 格式化返回结果
+        tmdb_id = str(best_match.get('id', ''))
+        result_info = {
+            'tmdb_id': tmdb_id,
+            'name': best_match.get('name', ''),
+            'original_name': best_match.get('original_name', ''),
+            'first_air_date': best_match.get('first_air_date', ''),
+            'year': best_match.get('first_air_date', '')[:4] if best_match.get('first_air_date') else '',
+            'overview': best_match.get('overview', ''),
+            'vote_average': best_match.get('vote_average', 0),
+            'popularity': best_match.get('popularity', 0)
+        }
+        
+        # 获取详细信息以获取季数和集数
+        detailed_info = get_tmdb_media_details(tmdb_id, 'tv_series', language)
+        if detailed_info:
+            result_info['number_of_seasons'] = detailed_info.get('number_of_seasons', 0)
+            result_info['number_of_episodes'] = detailed_info.get('number_of_episodes', 0)
+        
+        logger.info(f"✅ TMDB找到匹配的电视剧: {result_info['name']} ({result_info['year']}) - ID: {tmdb_id} (匹配分数: {best_score})")
+        return result_info
+        
+    except requests.exceptions.RequestException as e:
+        logger.error(f"❌ TMDB电视剧搜索API请求失败: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"❌ TMDB电视剧搜索处理失败: {e}")
+        return None
+
+
+def validate_tv_series_match(tmdb_info: Dict[str, Any], series_name: str, year: Optional[str] = None, 
+                           season_number: Optional[int] = None, episode_number: Optional[int] = None) -> bool:
+    """验证TMDB搜索结果是否与剧集信息匹配
+    
+    Args:
+        tmdb_info: TMDB搜索返回的剧集信息
+        series_name: 原始剧集名称
+        year: 年份（可选）
+        season_number: 季数（可选）
+        episode_number: 集数（可选）
+        
+    Returns:
+        bool: 是否匹配
+    """
+    if not tmdb_info:
+        return False
+    
+    try:
+        # 验证名称匹配
+        tmdb_name = tmdb_info.get('name', '')
+        tmdb_original_name = tmdb_info.get('original_name', '')
+        
+        name_match = (
+            series_name.lower() in tmdb_name.lower() or tmdb_name.lower() in series_name.lower() or
+            series_name.lower() in tmdb_original_name.lower() or tmdb_original_name.lower() in series_name.lower()
+        )
+        
+        if not name_match:
+            logger.debug(f"❌ 名称不匹配: {series_name} vs {tmdb_name}")
+            return False
+        
+        # 验证年份匹配（允许1年误差）
+        if year:
+            tmdb_year = tmdb_info.get('year', '')
+            if tmdb_year and abs(int(year) - int(tmdb_year)) > 1:
+                logger.debug(f"❌ 年份不匹配: {year} vs {tmdb_year}")
+                return False
+        
+        # 验证季数匹配
+        if season_number:
+            tmdb_seasons = tmdb_info.get('number_of_seasons', 0)
+            if tmdb_seasons > 0 and season_number > tmdb_seasons:
+                logger.debug(f"❌ 季数超出范围: S{season_number} > {tmdb_seasons}季")
+                return False
+        
+        logger.info(f"✅ TMDB匹配验证通过: {tmdb_name} ({tmdb_info.get('year', '')})")
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ TMDB匹配验证失败: {e}")
+        return False
+
+
 def get_tmdb_media_details(tmdb_id: str, media_type: str, language: str = 'zh-CN') -> Optional[Dict[str, Any]]:
     """获取TMDB媒体详细信息
     

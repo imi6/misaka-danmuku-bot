@@ -5,7 +5,7 @@ from datetime import datetime
 from telegram import Bot
 from config import ConfigManager
 from handlers.import_url import get_library_data, search_video_by_keyword
-from utils.tmdb_api import get_tmdb_media_details
+from utils.tmdb_api import get_tmdb_media_details, search_tv_series_by_name_year, validate_tv_series_match
 from utils.api import call_danmaku_api
 
 logger = logging.getLogger(__name__)
@@ -326,6 +326,7 @@ class WebhookHandler:
             series_name = media_info.get('series_name') or media_info.get('title')
             season = media_info.get('season')
             episode = media_info.get('episode')
+            year = media_info.get('year', '')
             
             if not series_name:
                 logger.info("ℹ️ 电视剧缺少剧集名称，跳过智能管理")
@@ -381,8 +382,23 @@ class WebhookHandler:
                     logger.info(f"📥 未找到匹配项，开始自动导入: {series_name} S{season_num} (TMDB: {tmdb_id})")
                     await self._import_episodes(tmdb_id, season_num, [episode_num, episode_num + 1])
                 else:
-                    logger.info(f"ℹ️ 未找到匹配项且缺少TMDB ID，无法自动导入: {series_name} S{season_num}")
-                    logger.debug(f"💡 建议: 请在Emby中为该剧集添加TMDB刮削信息，或手动导入到弹幕库中")
+                    # 尝试通过TMDB API搜索获取TMDB ID
+                    logger.info(f"🔍 未找到匹配项且缺少TMDB ID，尝试通过TMDB搜索: {series_name} ({year})")
+                    tmdb_search_result = search_tv_series_by_name_year(series_name, year)
+                    
+                    if tmdb_search_result:
+                        # 验证搜索结果是否匹配
+                        if validate_tv_series_match(tmdb_search_result, series_name, year, season_num, episode_num):
+                            found_tmdb_id = tmdb_search_result.get('tmdb_id')
+                            logger.info(f"✅ TMDB搜索成功，找到匹配的剧集: {tmdb_search_result.get('name')} (ID: {found_tmdb_id})")
+                            logger.info(f"📥 开始自动导入: {series_name} S{season_num} (TMDB: {found_tmdb_id})")
+                            await self._import_episodes(found_tmdb_id, season_num, [episode_num, episode_num + 1])
+                        else:
+                            logger.warning(f"⚠️ TMDB搜索结果验证失败，跳过自动导入: {series_name}")
+                            logger.debug(f"💡 建议: 请在Emby中为该剧集添加TMDB刮削信息，或手动导入到弹幕库中")
+                    else:
+                        logger.info(f"ℹ️ TMDB搜索未找到匹配结果，无法自动导入: {series_name} S{season_num}")
+                        logger.debug(f"💡 建议: 请在Emby中为该剧集添加TMDB刮削信息，或手动导入到弹幕库中")
             else:
                 # 存在匹配项：使用refresh功能更新
                 selected_match = final_matches[0]
