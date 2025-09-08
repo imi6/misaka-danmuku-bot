@@ -20,6 +20,7 @@ class WebhookHandler:
         self.bot = bot
         # 从环境变量读取时区配置，默认为Asia/Shanghai
         self.timezone = ZoneInfo(os.getenv('TZ', 'Asia/Shanghai'))
+        self._tmdb_cache = {}  # TMDB搜索结果缓存
         
     def validate_api_key(self, provided_key: str) -> bool:
         """验证API密钥"""
@@ -143,6 +144,69 @@ class WebhookHandler:
             episode_number = item.get('IndexNumber')
             series_name = item.get('SeriesName')
             
+            # 优化年份提取：优先使用PremiereDate
+            if not year and 'PremiereDate' in item and item['PremiereDate']:
+                try:
+                    premiere_date = datetime.fromisoformat(item['PremiereDate'].replace('Z', '+00:00'))
+                    year = premiere_date.year
+                    logger.debug(f"📅 从PremiereDate提取年份: {year}")
+                except Exception as e:
+                    logger.debug(f"解析PremiereDate失败: {e}")
+            
+            # 优化剧集名称提取：从路径中补充信息
+            if not series_name and 'Path' in data:
+                path = data['Path']
+                import os
+                import re
+                
+                path_parts = [p for p in path.split('/') if p.strip()]
+                if len(path_parts) >= 3:
+                    # 通常剧集名在倒数第三个或第四个位置
+                    for i in range(-4, -1):
+                        if abs(i) <= len(path_parts):
+                            potential_name = path_parts[i]
+                            # 跳过明显的季度文件夹
+                            if not re.match(r'^Season\s+\d+$', potential_name, re.IGNORECASE):
+                                series_name = potential_name
+                                logger.debug(f"📺 从路径提取剧集名: {series_name}")
+                                break
+                
+                # 从文件名中提取季集信息（如果Item中没有）
+                if (not season_number or not episode_number) and path:
+                    filename = os.path.basename(path)
+                    patterns = [
+                        r'S(\d+)E(\d+)',  # S01E01
+                        r'Season\s*(\d+).*Episode\s*(\d+)',  # Season 1 Episode 1
+                        r'第(\d+)季.*第(\d+)集',  # 第1季第1集
+                        r'(\d+)x(\d+)',  # 1x01
+                    ]
+                    
+                    for pattern in patterns:
+                        match = re.search(pattern, filename, re.IGNORECASE)
+                        if match:
+                            if not season_number:
+                                season_number = int(match.group(1))
+                                logger.debug(f"📊 从文件名提取季度: S{season_number}")
+                            if not episode_number:
+                                episode_number = int(match.group(2))
+                                logger.debug(f"📊 从文件名提取集数: E{episode_number}")
+                            break
+                
+                # 从路径中提取年份（如果Item中没有）
+                if not year:
+                    year_match = re.search(r'\b(19|20)\d{2}\b', path)
+                    if year_match:
+                        year = int(year_match.group())
+                        logger.debug(f"📅 从路径提取年份: {year}")
+            
+            # 清理剧集名称
+            if series_name:
+                import re
+                series_name = series_name.strip()
+                # 移除常见的无用后缀
+                series_name = re.sub(r'\s*\(\d{4}\)\s*$', '', series_name)  # 移除年份括号
+                series_name = re.sub(r'\s*-\s*Season\s+\d+\s*$', '', series_name, flags=re.IGNORECASE)  # 移除季度后缀
+            
             # 提取TMDB ID信息（Emby刮削后的元数据）
             provider_ids = item.get('ProviderIds', {})
             tmdb_id = provider_ids.get('Tmdb') or provider_ids.get('TheMovieDb')
@@ -152,6 +216,7 @@ class WebhookHandler:
             # 调试日志：显示提供商ID信息
             logger.debug(f"🔍 媒体提供商ID信息: {provider_ids}")
             logger.debug(f"🎯 提取的TMDB ID: {tmdb_id}, IMDB ID: {imdb_id}, TVDB ID: {tvdb_id}")
+            logger.debug(f"🎯 最终提取信息: 剧集='{series_name}', 季度={season_number}, 集数={episode_number}, 年份={year}, TMDB_ID={tmdb_id}")
             
             # 构建完整标题
             if media_type == 'Episode' and series_name:
@@ -352,33 +417,119 @@ class WebhookHandler:
             if not library_data:
                 logger.warning("⚠️ 无法获取影视库数据")
                 return
+
+            # 使用剧名搜索电视剧类型的内容
+            matches = search_video_by_keyword(library_data, series_name, 'tv_series')
+            logger.info(f"📊 剧名搜索结果: {len(matches)} 个")
             
-            matches = search_video_by_keyword(library_data, series_name, media_type='tv_series')
-            
-            # 优先匹配：名称 + 季度信息
+            # 计算匹配分数并筛选，重点关注season字段匹配
             season_matches = []
-            if season:
-                for match in matches:
-                    match_title = match.get('title', '').lower()
-                    # 检查标题中是否包含季度信息
-                    if (f"season {season}" in match_title or 
-                        f"s{season}" in match_title or 
-                        f"第{season}季" in match_title or
-                        f"第{season}部" in match_title):
-                        season_matches.append(match)
+            for match in matches:
+                match_title = match.get('title', '').lower()
+                match_season = match.get('season', '')
+                series_name_lower = series_name.lower()
+                score = 0
+                
+                # 名称匹配评分
+                if series_name_lower == match_title:
+                    score += 100  # 完全匹配
+                elif series_name_lower in match_title:
+                    score += 70   # 包含匹配
+                elif match_title in series_name_lower:
+                    score += 50   # 被包含匹配
+                    
+                # 季度字段匹配评分（使用专门的season字段）
+                if season and match_season:
+                    try:
+                        match_season_num = int(match_season)
+                        if match_season_num == season:
+                            score += 100  # 季度完全匹配
+                            logger.debug(f"✅ 季度完全匹配: {match_title} S{season}")
+                        elif abs(match_season_num - season) <= 1:
+                            score += 50   # 季度相近匹配
+                            logger.debug(f"⚠️ 季度相近匹配: {match_title} S{match_season_num} vs S{season}")
+                    except (ValueError, TypeError):
+                        # 如果season字段不是数字，尝试字符串匹配
+                        if str(season) in str(match_season):
+                            score += 80
+                            logger.debug(f"📝 季度字符串匹配: {match_title} season={match_season}")
+                elif not season and not match_season:
+                    # 都没有季度信息，给予基础分数
+                    score += 20
                         
-            # 如果没有找到季度匹配或未匹配到具体集数，尝试通过TMDB API搜索
-            if (not season_matches or not episode) and not tmdb_id:
-                logger.info(f"🔍 尝试通过TMDB搜索: {series_name} ({year})")
-                tmdb_search_result = search_tv_series_by_name_year(series_name, year)
+                # 年份匹配评分
+                if year:
+                    match_year = match.get('year', '')
+                    if match_year and str(year) == str(match_year):
+                        score += 30
+                    
+                if score > 60:  # 只添加高匹配度的结果
+                    season_matches.append({'match': match, 'score': score})
+                    logger.debug(f"📊 匹配项: {match_title} (season={match_season}) 分数={score}")
+                    
+            # 按匹配分数排序
+            season_matches.sort(key=lambda x: x['score'], reverse=True)
+            season_matches = [item['match'] for item in season_matches]
+            
+            logger.info(f"📊 Library匹配结果: 找到 {len(season_matches)} 个匹配项（基于season字段匹配）")
+            if season_matches:
+                for i, match in enumerate(season_matches[:3]):  # 只显示前3个
+                    logger.info(f"  {i+1}. {match.get('title')} (season={match.get('season')}, ID: {match.get('animeId')})")
+                        
+            # 检查是否有完全匹配的季度
+            exact_season_match = False
+            if season_matches and season:
+                for match in season_matches:
+                    match_season = match.get('season', '')
+                    try:
+                        if int(match_season) == season:
+                            exact_season_match = True
+                            break
+                    except (ValueError, TypeError):
+                        if str(season) in str(match_season):
+                            exact_season_match = True
+                            break
+            
+            # 如果没有找到季度匹配、没有完全匹配的季度或未匹配到具体集数，尝试通过TMDB API搜索
+            should_search_tmdb = (
+                not season_matches or 
+                (season and not exact_season_match) or 
+                not episode
+            ) and not tmdb_id
+            
+            if should_search_tmdb:
+                logger.info(f"🔍 触发TMDB搜索原因: 无匹配项={not season_matches}, 季度不匹配={season and not exact_season_match}, 无集数={not episode}")
+                
+                # 先检查缓存
+                cached_result = self._get_cached_tmdb_result(series_name)
+                tmdb_search_result = None
+                
+                if cached_result:
+                    logger.info(f"💾 使用缓存的TMDB结果: {series_name}")
+                    tmdb_search_result = cached_result
+                else:
+                    logger.info(f"🔍 开始TMDB搜索: {series_name} ({year if year else '年份未知'})")
+                    tmdb_search_result = search_tv_series_by_name_year(series_name, year)
+                    
+                    if tmdb_search_result:
+                        # 缓存搜索结果
+                        self._cache_tmdb_result(series_name, tmdb_search_result)
                 
                 if tmdb_search_result:
-                    # 验证搜索结果是否匹配
-                    if validate_tv_series_match(tmdb_search_result, series_name, year, season, episode):
+                    # 增强的匹配验证
+                    match_score = self._calculate_match_score(tmdb_search_result, series_name, year, season)
+                    logger.info(f"📊 TMDB匹配评分: {tmdb_search_result.get('name')} ({tmdb_search_result.get('year', 'N/A')}) - {match_score}分")
+                    
+                    if match_score >= 70:  # 设置合理的匹配阈值
                         found_tmdb_id = tmdb_search_result.get('tmdb_id')
-                        logger.info(f"✅ TMDB搜索成功，找到匹配的剧集: {tmdb_search_result.get('name')} (ID: {found_tmdb_id})")
+                        logger.info(f"✅ TMDB搜索匹配成功: {tmdb_search_result.get('name')} - 匹配分数: {match_score}")
                         logger.info(f"📥 开始自动导入: {series_name} S{season} (TMDB: {found_tmdb_id})")
                         await self._import_episodes(found_tmdb_id, season, [episode, episode + 1] if episode else None)
+                        return True
+                    else:
+                        logger.info(f"❌ TMDB搜索结果匹配度不足: {tmdb_search_result.get('name')} - 匹配分数: {match_score}")
+                else:
+                    logger.info(f"❌ TMDB搜索未找到结果: {series_name}")
             
             # 如果通过季度匹配到多个结果，执行严格匹配策略
             final_matches = []
@@ -456,6 +607,92 @@ class WebhookHandler:
                     
         except Exception as e:
             logger.error(f"❌ 电视剧智能管理处理失败: {e}", exc_info=True)
+    
+    def _calculate_match_score(self, tmdb_result: dict, series_name: str, year: Optional[str], season: Optional[int]) -> int:
+        """计算TMDB搜索结果的匹配分数
+        
+        Args:
+            tmdb_result: TMDB搜索结果
+            series_name: 剧集名称
+            year: 年份
+            season: 季度
+            
+        Returns:
+            匹配分数 (0-200)
+        """
+        import time
+        
+        score = 0
+        tmdb_name = tmdb_result.get('name', '').lower()
+        tmdb_original_name = tmdb_result.get('original_name', '').lower()
+        series_name_lower = series_name.lower()
+        
+        # 名称匹配评分 (最高100分)
+        if series_name_lower == tmdb_name or series_name_lower == tmdb_original_name:
+            score += 100  # 完全匹配
+        elif series_name_lower in tmdb_name or series_name_lower in tmdb_original_name:
+            score += 70   # 包含匹配
+        elif tmdb_name in series_name_lower or tmdb_original_name in series_name_lower:
+            score += 50   # 被包含匹配
+        
+        # 年份匹配评分 (最高30分)
+        if year and tmdb_result.get('year'):
+            tmdb_year = int(tmdb_result.get('year'))
+            input_year = int(year)
+            if tmdb_year == input_year:
+                score += 30  # 年份完全匹配
+            elif abs(tmdb_year - input_year) <= 1:
+                score += 15  # 年份相差1年
+        
+        # 季度验证评分 (最高20分)
+        if season and tmdb_result.get('number_of_seasons'):
+            number_of_seasons = tmdb_result.get('number_of_seasons', 0)
+            if number_of_seasons >= season:
+                score += 20  # 季度数量合理
+        
+        return score
+    
+    def _cache_tmdb_result(self, series_name: str, tmdb_result: dict) -> None:
+        """缓存TMDB搜索结果
+        
+        Args:
+            series_name: 剧集名称
+            tmdb_result: TMDB搜索结果
+        """
+        import time
+        
+        cache_key = series_name.lower().strip()
+        self._tmdb_cache[cache_key] = {
+            'result': tmdb_result,
+            'timestamp': time.time()
+        }
+        logger.debug(f"💾 缓存TMDB搜索结果: {series_name} -> {tmdb_result.get('name')}")
+    
+    def _get_cached_tmdb_result(self, series_name: str) -> Optional[dict]:
+        """获取缓存的TMDB搜索结果
+        
+        Args:
+            series_name: 剧集名称
+            
+        Returns:
+            缓存的TMDB结果，如果不存在或过期则返回None
+        """
+        import time
+        
+        cache_key = series_name.lower().strip()
+        cached = self._tmdb_cache.get(cache_key)
+        
+        if cached:
+            # 检查缓存是否过期 (24小时)
+            if time.time() - cached['timestamp'] < 86400:
+                logger.debug(f"💾 使用缓存的TMDB结果: {series_name}")
+                return cached['result']
+            else:
+                # 清理过期缓存
+                del self._tmdb_cache[cache_key]
+                logger.debug(f"🗑️ 清理过期TMDB缓存: {series_name}")
+        
+        return None
     
     async def _import_movie(self, tmdb_id: str):
         """导入单个电影
@@ -556,10 +793,57 @@ class WebhookHandler:
             season: 季度
             episodes: 集数列表
         """
+        if not episodes:
+            logger.warning(f"⚠️ 集数列表为空，跳过导入: TMDB {tmdb_id} S{season}")
+            return
+        
+        # 获取TMDB详细信息进行验证
+        try:
+            tmdb_info = get_tmdb_media_details(tmdb_id, 'tv_series')
+            if tmdb_info:
+                logger.info(f"📺 准备导入剧集: {tmdb_info.get('name', 'Unknown')} ({tmdb_info.get('year', 'N/A')})")
+                
+                # 验证季度有效性
+                seasons = tmdb_info.get('seasons', [])
+                valid_season = None
+                for s in seasons:
+                    if s.get('season_number') == season:
+                        valid_season = s
+                        break
+                
+                if not valid_season:
+                    logger.error(f"❌ 无效的季度: S{season}，可用季度: {[s.get('season_number') for s in seasons]}")
+                    return
+                
+                max_episodes = valid_season.get('episode_count', 0)
+                logger.info(f"📊 季度信息: S{season} 共{max_episodes}集")
+            else:
+                logger.warning(f"⚠️ 无法获取TMDB详细信息: {tmdb_id}，继续尝试导入")
+        except Exception as e:
+            logger.warning(f"⚠️ 验证TMDB信息时出错: {e}，继续尝试导入")
+        
+        success_count = 0
+        failed_count = 0
+        
         try:
             for episode in episodes:
+                if episode is None:
+                    continue
+                    
                 # 确保episode是整数类型
-                episode_num = int(episode) if isinstance(episode, str) else episode
+                try:
+                    episode_num = int(episode) if isinstance(episode, str) else episode
+                    if episode_num <= 0:
+                        logger.warning(f"⚠️ 跳过无效集数: {episode_num}")
+                        continue
+                except (ValueError, TypeError):
+                    logger.warning(f"⚠️ 跳过无效集数格式: {episode}")
+                    continue
+                
+                # 验证集数是否超出范围
+                if 'max_episodes' in locals() and max_episodes > 0 and episode_num > max_episodes:
+                    logger.warning(f"⚠️ 集数超出范围: S{season}E{episode_num} > {max_episodes}集，跳过")
+                    continue
                 
                 # 构建导入参数
                 import_params = {
@@ -573,19 +857,34 @@ class WebhookHandler:
                 logger.info(f"🚀 开始导入: TMDB {tmdb_id} S{season:02d}E{episode_num:02d}")
                 
                 # 调用导入API
-                response = call_danmaku_api(
-                    method="POST",
-                    endpoint="/import/auto",
-                    params=import_params
-                )
-                
-                if response and response.get("success"):
-                    logger.info(f"✅ 导入成功: S{season:02d}E{episode_num:02d}")
-                else:
-                    logger.info(f"ℹ️ 集数可能不存在或已导入: S{season:02d}E{episode_num:02d}")
+                try:
+                    response = call_danmaku_api(
+                        method="POST",
+                        endpoint="/import/auto",
+                        params=import_params
+                    )
+                    
+                    if response and response.get("success"):
+                        success_count += 1
+                        logger.info(f"✅ 导入成功: S{season:02d}E{episode_num:02d}")
+                    else:
+                        failed_count += 1
+                        error_msg = response.get('message', '未知错误') if response else '请求失败'
+                        logger.warning(f"⚠️ 导入失败: S{season:02d}E{episode_num:02d} - {error_msg}")
+                        
+                except Exception as api_error:
+                    failed_count += 1
+                    logger.error(f"❌ 导入API调用异常: S{season:02d}E{episode_num:02d} - {api_error}")
+            
+            # 输出导入统计
+            total_episodes = success_count + failed_count
+            if total_episodes > 0:
+                logger.info(f"📊 导入完成: 成功 {success_count}/{total_episodes} 集")
+                if failed_count > 0:
+                    logger.warning(f"⚠️ {failed_count} 集导入失败，请检查日志")
                     
         except Exception as e:
-            logger.error(f"❌ 导入集数异常: {e}")
+            logger.error(f"❌ 导入集数异常: {e}", exc_info=True)
     
 
     
