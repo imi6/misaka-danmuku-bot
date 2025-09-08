@@ -326,7 +326,8 @@ class ConfigManager:
         """加载JSON配置文件"""
         if not self.config_file_path.exists():
             if not ConfigManager._initialization_logged:
-                logger.info(f"ℹ️ JSON配置文件不存在，将使用默认配置: {self.config_file_path}")
+                logger.info(f"ℹ️ JSON配置文件不存在，将创建默认配置: {self.config_file_path}")
+            self._create_default_config()
             return
         
         try:
@@ -347,8 +348,8 @@ class ConfigManager:
         """加载用户配置文件"""
         if not self.user_config_file_path.exists():
             if not ConfigManager._initialization_logged:
-                logger.info(f"ℹ️ 用户配置文件不存在，将使用默认配置: {self.user_config_file_path}")
-            self._user_config = {"allowed_user_ids": [], "admin_user_ids": []}
+                logger.info(f"ℹ️ 用户配置文件不存在，将创建默认配置: {self.user_config_file_path}")
+            self._create_default_user_config()
             return
         
         try:
@@ -364,6 +365,82 @@ class ConfigManager:
             logger.error(f"❌ 加载用户配置文件失败: {e}")
             self._user_config = {"allowed_user_ids": [], "admin_user_ids": []}
     
+    def _create_default_config(self):
+        """创建默认配置文件"""
+        try:
+            import json
+            # 确保目录存在
+            self.config_file_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # 创建默认配置
+            default_config = {
+                "telegram": {
+                    "connect_timeout": 30.0,
+                    "read_timeout": 30.0,
+                    "pool_timeout": 60.0,
+                    "connection_pool_size": 20
+                },
+                "danmaku_api": {
+                    "timeout": 60,
+                    "headers": {
+                        "Content-Type": "application/json",
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+                    }
+                },
+                "tmdb": {
+                    "base_url": "https://api.themoviedb.org/3"
+                },
+                "tvdb": {
+                    "base_url": "https://api4.thetvdb.com/v4"
+                },
+                "bgm": {
+                    "base_url": "https://api.bgm.tv"
+                },
+                "webhook": {
+                    "port": 7769,
+                    "enabled": False
+                },
+                "app": {
+                    "log_level": "INFO",
+                    "debug": False,
+                    "environment": "production",
+                    "api_timeout": 60
+                }
+            }
+            
+            with open(self.config_file_path, 'w', encoding='utf-8') as f:
+                json.dump(default_config, f, indent=2, ensure_ascii=False)
+            
+            self._json_config = default_config
+            logger.info(f"✅ 默认配置文件已创建: {self.config_file_path}")
+            
+        except Exception as e:
+            logger.error(f"❌ 创建默认配置文件失败: {e}")
+             self._json_config = {}
+    
+    def _create_default_user_config(self):
+        """创建默认用户配置文件"""
+        try:
+            import json
+            # 确保目录存在
+            self.user_config_file_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # 创建默认用户配置
+            default_user_config = {
+                "allowed_user_ids": [],
+                "admin_user_ids": []
+            }
+            
+            with open(self.user_config_file_path, 'w', encoding='utf-8') as f:
+                json.dump(default_user_config, f, indent=2, ensure_ascii=False)
+            
+            self._user_config = default_user_config
+            logger.info(f"✅ 默认用户配置文件已创建: {self.user_config_file_path}")
+            
+        except Exception as e:
+            logger.error(f"❌ 创建默认用户配置文件失败: {e}")
+            self._user_config = {"allowed_user_ids": [], "admin_user_ids": []}
+     
     def _save_user_config(self):
         """保存用户配置文件"""
         try:
