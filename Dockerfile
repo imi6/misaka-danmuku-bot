@@ -56,6 +56,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # 复制项目代码（复制所有必要文件）
 COPY --chown=botuser:botgroup bot.py .
 COPY --chown=botuser:botgroup config.py .
+COPY --chown=botuser:botgroup webhook_server.py .
 COPY --chown=botuser:botgroup handlers/ ./handlers/
 COPY --chown=botuser:botgroup callback/ ./callback/
 COPY --chown=botuser:botgroup utils/ ./utils/
