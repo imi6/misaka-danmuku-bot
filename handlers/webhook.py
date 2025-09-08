@@ -404,12 +404,11 @@ class WebhookHandler:
         try:
             logger.info(f"🔄 开始刷新电影 (源ID: {source_id})")
             
-            # 调用刷新API
-            refresh_data = {
-                "sourceId": source_id
-            }
-            
-            response = call_danmaku_api('POST', '/refresh', refresh_data)
+            # 使用与电视剧刷新相同的API端点格式
+            response = call_danmaku_api(
+                method="POST",
+                endpoint=f"/library/source/{source_id}/refresh"
+            )
             
             if response and response.get('success'):
                 logger.info(f"✅ 电影刷新成功 (源ID: {source_id})")
