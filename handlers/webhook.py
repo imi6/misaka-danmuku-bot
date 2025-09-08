@@ -432,7 +432,7 @@ class WebhookHandler:
             else:
                 # 存在匹配项：使用refresh功能更新
                 selected_match = final_matches[0]
-                logger.info(f"🔄 找到匹配项，开始刷新: {selected_match.get('title', series_name)} S{season_num}")
+                logger.info(f"🔄 找到匹配项，开始刷新: {selected_match.get('title', series_name)} S{season}")
                 
                 # 获取源列表进行刷新
                 anime_id = selected_match.get('animeId')
@@ -444,7 +444,7 @@ class WebhookHandler:
                             source_id = sources[0].get('sourceId')
                             if source_id:
                                 # 只有在有TMDB ID时才传递，否则传递None跳过导入
-                                await self._refresh_episodes(source_id, [episode_num, episode_num + 1], tmdb_id if tmdb_id else None, season_num)
+                                await self._refresh_episodes(source_id, [episode, episode + 1], tmdb_id if tmdb_id else None, season)
                             else:
                                 logger.error(f"❌ 无法获取源ID: {selected_match.get('title')}")
                         else:
