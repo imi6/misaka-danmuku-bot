@@ -338,14 +338,14 @@ class WebhookHandler:
             
             # 确保season和episode是整数类型
             try:
-                season_num = int(season) if season else 0
-                episode_num = int(episode) if episode else 0
+                season = int(season) if season else 0
+                episode = int(episode) if episode else 0
             except (ValueError, TypeError):
                 logger.warning(f"⚠️ 无效的季集编号: season={season}, episode={episode}")
-                season_num = 0
-                episode_num = 0
+                season = 0
+                episode = 0
             
-            logger.info(f"🤖 开始电视剧智能管理: {series_name} S{season_num:02d}E{episode_num:02d} (TMDB: {tmdb_id})")
+            logger.info(f"🤖 开始电视剧智能管理: {series_name} {'S' + str(season).zfill(2) if season else ''}{('E' + str(episode).zfill(2)) if episode else ''} (TMDB: {tmdb_id})")
             
             # 1. 检查缓存库中的影视库，使用series_name和季度进行匹配
             library_data = await get_library_data()
@@ -366,25 +366,51 @@ class WebhookHandler:
                         f"第{season}季" in match_title or
                         f"第{season}部" in match_title):
                         season_matches.append(match)
+                        
+            # 如果没有找到季度匹配或未匹配到具体集数，尝试通过TMDB API搜索
+            if (not season_matches or not episode) and not tmdb_id:
+                logger.info(f"🔍 尝试通过TMDB搜索: {series_name} ({year})")
+                tmdb_search_result = search_tv_series_by_name_year(series_name, year)
+                
+                if tmdb_search_result:
+                    # 验证搜索结果是否匹配
+                    if validate_tv_series_match(tmdb_search_result, series_name, year, season, episode):
+                        found_tmdb_id = tmdb_search_result.get('tmdb_id')
+                        logger.info(f"✅ TMDB搜索成功，找到匹配的剧集: {tmdb_search_result.get('name')} (ID: {found_tmdb_id})")
+                        logger.info(f"📥 开始自动导入: {series_name} S{season} (TMDB: {found_tmdb_id})")
+                        await self._import_episodes(found_tmdb_id, season, [episode, episode + 1] if episode else None)
             
             # 如果通过季度匹配到多个结果，执行严格匹配策略
-            if len(season_matches) > 1:
-                exact_matches = [match for match in season_matches 
-                               if match.get('title', '').lower() == series_name.lower()]
-                final_matches = exact_matches if exact_matches else season_matches[:1]
-            elif len(season_matches) == 1:
-                final_matches = season_matches
+            final_matches = []
+            if season_matches:
+                # 严格匹配：完全匹配剧集名称
+                for match in season_matches:
+                    match_title = match.get('title', '').lower()
+                    # 移除季度信息后进行比较
+                    clean_match_title = match_title.replace(f'season {season}', '').replace(f's{season}', '')\
+                                      .replace(f'第{season}季', '').replace(f'第{season}部', '').strip()
+                    clean_series_name = series_name.lower().strip()
+                    
+                    if clean_match_title == clean_series_name:
+                        final_matches.append(match)
+                        break  # 找到完全匹配就停止
+                
+                # 如果没有完全匹配，使用第一个季度匹配结果
+                if not final_matches:
+                    final_matches = [season_matches[0]]
             else:
-                # 没有季度匹配，使用名称精确匹配
-                exact_matches = [match for match in matches 
-                               if match.get('title', '').lower() == series_name.lower()]
-                final_matches = exact_matches
+                # 如果没有季度匹配，尝试完全匹配
+                for match in matches:
+                    match_title = match.get('title', '').lower().strip()
+                    if match_title == series_name.lower().strip():
+                        final_matches.append(match)
+                        break
             
             if not final_matches:
                 # 未找到匹配项：检查是否有TMDB ID进行自动导入
                 if tmdb_id:
-                    logger.info(f"📥 未找到匹配项，开始自动导入: {series_name} S{season_num} (TMDB: {tmdb_id})")
-                    await self._import_episodes(tmdb_id, season_num, [episode_num, episode_num + 1])
+                    logger.info(f"📥 未找到匹配项，开始自动导入: {series_name} S{season} (TMDB: {tmdb_id})")
+                    await self._import_episodes(tmdb_id, season, [episode, episode + 1] if episode else None)
                 else:
                     # 尝试通过TMDB API搜索获取TMDB ID
                     logger.info(f"🔍 未找到匹配项且缺少TMDB ID，尝试通过TMDB搜索: {series_name} ({year})")
@@ -392,17 +418,17 @@ class WebhookHandler:
                     
                     if tmdb_search_result:
                         # 验证搜索结果是否匹配
-                        if validate_tv_series_match(tmdb_search_result, series_name, year, season_num, episode_num):
+                        if validate_tv_series_match(tmdb_search_result, series_name, year, season, episode):
                             found_tmdb_id = tmdb_search_result.get('tmdb_id')
                             logger.info(f"✅ TMDB搜索成功，找到匹配的剧集: {tmdb_search_result.get('name')} (ID: {found_tmdb_id})")
-                            logger.info(f"📥 开始自动导入: {series_name} S{season_num} (TMDB: {found_tmdb_id})")
-                            await self._import_episodes(found_tmdb_id, season_num, [episode_num, episode_num + 1])
+                            logger.info(f"📥 开始自动导入: {series_name} S{season} (TMDB: {found_tmdb_id})")
+                            await self._import_episodes(found_tmdb_id, season, [episode, episode + 1] if episode else None)
                         else:
-                            logger.warning(f"⚠️ TMDB搜索结果验证失败，跳过自动导入: {series_name}")
-                            logger.debug(f"💡 建议: 请在Emby中为该剧集添加TMDB刮削信息，或手动导入到弹幕库中")
+                            logger.warning(f"⚠️ TMDB搜索结果验证失败: {series_name}")
+                            logger.debug(f"💡 建议: 请检查剧集名称和年份是否正确，或在Emby中添加正确的TMDB刮削信息")
                     else:
-                        logger.info(f"ℹ️ TMDB搜索未找到匹配结果，无法自动导入: {series_name} S{season_num}")
-                        logger.debug(f"💡 建议: 请在Emby中为该剧集添加TMDB刮削信息，或手动导入到弹幕库中")
+                        logger.info(f"ℹ️ TMDB搜索未找到匹配结果: {series_name} ({year})")
+                        logger.debug(f"💡 建议: 请检查剧集名称和年份是否正确，或在Emby中添加TMDB刮削信息")
             else:
                 # 存在匹配项：使用refresh功能更新
                 selected_match = final_matches[0]
