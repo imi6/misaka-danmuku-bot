@@ -416,7 +416,7 @@ class ConfigManager:
             
         except Exception as e:
             logger.error(f"❌ 创建默认配置文件失败: {e}")
-             self._json_config = {}
+            self._json_config = {}
     
     def _create_default_user_config(self):
         """创建默认用户配置文件"""
