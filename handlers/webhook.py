@@ -204,12 +204,94 @@ class WebhookHandler:
         """
         try:
             tmdb_id = media_info.get('tmdb_id')
+            media_type = media_info.get('type', '')
+            title = media_info.get('title')
+            
+            if not tmdb_id or not title:
+                logger.info("ℹ️ 媒体缺少必要信息（TMDB ID或标题），跳过智能管理")
+                return
+            
+            # 根据媒体类型选择处理方式
+            if media_type == 'Movie':
+                await self._process_movie_management(media_info)
+            elif media_type == 'Episode':
+                await self._process_tv_management(media_info)
+            else:
+                logger.info(f"ℹ️ 不支持的媒体类型: {media_type}，跳过智能管理")
+                
+        except Exception as e:
+            logger.error(f"❌ 智能影视库管理处理失败: {e}", exc_info=True)
+    
+    async def _process_movie_management(self, media_info: Dict[str, str]):
+        """处理电影智能管理流程
+        
+        Args:
+            media_info: 电影媒体信息
+        """
+        try:
+            tmdb_id = media_info.get('tmdb_id')
+            movie_title = media_info.get('original_title') or media_info.get('title')
+            year = media_info.get('year', '')
+            
+            logger.info(f"🎬 开始电影智能管理: {movie_title} ({year}) (TMDB: {tmdb_id})")
+            
+            # 1. 检查缓存库中的电影，使用电影名称进行匹配
+            library_data = await get_library_data()
+            if not library_data:
+                logger.warning("⚠️ 无法获取影视库数据")
+                return
+            
+            matches = search_video_by_keyword(library_data, movie_title)
+            
+            # 电影严格匹配策略：优先完全匹配的标题
+            exact_matches = [match for match in matches 
+                           if match.get('title', '').lower() == movie_title.lower()]
+            
+            if not exact_matches:
+                # 未找到精确匹配：使用TMDB ID自动导入电影
+                logger.info(f"📥 未找到匹配的电影，开始自动导入: {movie_title} ({year})")
+                await self._import_movie(tmdb_id)
+            else:
+                # 存在匹配项：使用refresh功能更新电影数据
+                selected_match = exact_matches[0]
+                logger.info(f"🔄 找到匹配的电影，开始刷新: {selected_match.get('title', movie_title)}")
+                
+                # 获取源列表进行刷新
+                anime_id = selected_match.get('animeId')
+                if anime_id:
+                    sources_response = call_danmaku_api('GET', f'/library/anime/{anime_id}/sources')
+                    if sources_response and sources_response.get('success'):
+                        sources = sources_response.get('data', [])
+                        if sources:
+                            source_id = sources[0].get('sourceId')
+                            if source_id:
+                                await self._refresh_movie(source_id)
+                            else:
+                                logger.error(f"❌ 无法获取源ID: {selected_match.get('title')}")
+                        else:
+                            logger.warning(f"⚠️ 未找到可用源: {selected_match.get('title')}")
+                    else:
+                        logger.error(f"❌ 获取源列表失败: {selected_match.get('title')}")
+                else:
+                    logger.error(f"❌ 无法获取动漫ID: {selected_match.get('title')}")
+                    
+        except Exception as e:
+            logger.error(f"❌ 电影智能管理处理失败: {e}", exc_info=True)
+    
+    async def _process_tv_management(self, media_info: Dict[str, str]):
+        """处理电视剧智能管理流程
+        
+        Args:
+            media_info: 电视剧媒体信息
+        """
+        try:
+            tmdb_id = media_info.get('tmdb_id')
             series_name = media_info.get('series_name') or media_info.get('title')
             season = media_info.get('season')
             episode = media_info.get('episode')
             
-            if not tmdb_id or not series_name:
-                logger.info("ℹ️ 媒体缺少必要信息（TMDB ID或剧集名称），跳过智能管理")
+            if not series_name:
+                logger.info("ℹ️ 电视剧缺少剧集名称，跳过智能管理")
                 return
             
             # 确保season和episode是整数类型
@@ -221,7 +303,7 @@ class WebhookHandler:
                 season_num = 0
                 episode_num = 0
             
-            logger.info(f"🤖 开始智能影视库管理: {series_name} S{season_num:02d}E{episode_num:02d} (TMDB: {tmdb_id})")
+            logger.info(f"🤖 开始电视剧智能管理: {series_name} S{season_num:02d}E{episode_num:02d} (TMDB: {tmdb_id})")
             
             # 1. 检查缓存库中的影视库，使用series_name和季度进行匹配
             library_data = await get_library_data()
@@ -283,9 +365,60 @@ class WebhookHandler:
                         logger.error(f"❌ 获取源列表失败: {selected_match.get('title')}")
                 else:
                     logger.error(f"❌ 无法获取动漫ID: {selected_match.get('title')}")
-            
+                    
         except Exception as e:
-            logger.error(f"❌ 智能影视库管理处理失败: {e}", exc_info=True)
+            logger.error(f"❌ 电视剧智能管理处理失败: {e}", exc_info=True)
+    
+    async def _import_movie(self, tmdb_id: str):
+        """导入单个电影
+        
+        Args:
+            tmdb_id: TMDB电影ID
+        """
+        try:
+            logger.info(f"📥 开始导入电影 (TMDB: {tmdb_id})")
+            
+            # 调用导入API
+            import_params = {
+                "searchType": "tmdb",
+                "searchTerm": tmdb_id
+            }
+            
+            response = call_danmaku_api('POST', '/import/auto', params=import_params)
+            
+            if response and response.get('success'):
+                logger.info(f"✅ 电影导入成功 (TMDB: {tmdb_id})")
+            else:
+                error_msg = response.get('message', '未知错误') if response else '请求失败'
+                logger.error(f"❌ 电影导入失败 (TMDB: {tmdb_id}): {error_msg}")
+                
+        except Exception as e:
+            logger.error(f"❌ 导入电影时发生错误 (TMDB: {tmdb_id}): {e}", exc_info=True)
+    
+    async def _refresh_movie(self, source_id: str):
+        """刷新电影数据
+        
+        Args:
+            source_id: 源ID
+        """
+        try:
+            logger.info(f"🔄 开始刷新电影 (源ID: {source_id})")
+            
+            # 调用刷新API
+            refresh_data = {
+                "sourceId": source_id
+            }
+            
+            response = call_danmaku_api('POST', '/refresh', refresh_data)
+            
+            if response and response.get('success'):
+                logger.info(f"✅ 电影刷新成功 (源ID: {source_id})")
+            else:
+                error_msg = response.get('message', '未知错误') if response else '请求失败'
+                logger.error(f"❌ 电影刷新失败 (源ID: {source_id}): {error_msg}")
+                
+        except Exception as e:
+            logger.error(f"❌ 刷新电影时发生错误 (源ID: {source_id}): {e}", exc_info=True)
     
     async def _import_episodes(self, tmdb_id: str, season: int, episodes: list):
         """导入指定集数
@@ -305,7 +438,6 @@ class WebhookHandler:
                     "searchType": "tmdb",
                     "searchTerm": tmdb_id,
                     "mediaType": "tv_series",
-                    "importMethod": "auto",
                     "season": season,
                     "episode": episode_num
                 }
