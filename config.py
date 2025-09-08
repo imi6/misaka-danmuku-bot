@@ -98,8 +98,21 @@ class TMDBConfig:
     """TMDB API 配置"""
     api_key: Optional[str] = None
     base_url: str = "https://api.themoviedb.org/3"
+    proxy_url: Optional[str] = None  # TMDB代理URL，如果设置则使用代理而不是官方API
     
     def __post_init__(self):
+        # 处理代理URL配置
+        if self.proxy_url and self.proxy_url.strip():
+            # 移除末尾的斜杠
+            self.proxy_url = self.proxy_url.rstrip('/')
+            # 如果配置了代理，使用代理URL作为base_url
+            if self.proxy_url.endswith('/3'):
+                self.base_url = self.proxy_url
+            else:
+                self.base_url = f"{self.proxy_url}/3"
+            if not ConfigManager._initialization_logged:
+                logger.info(f"ℹ️ 使用TMDB代理: {self.base_url}")
+        
         if not self.api_key or not self.api_key.strip():
             if not ConfigManager._initialization_logged:
                 logger.info("ℹ️ 未配置 TMDB API Key，将跳过 TMDB 辅助搜索")
@@ -516,7 +529,8 @@ class ConfigManager:
             
             # 加载TMDB配置
             self._tmdb = TMDBConfig(
-                api_key=os.getenv("TMDB_API_KEY", "")
+                api_key=os.getenv("TMDB_API_KEY", ""),
+                proxy_url=os.getenv("TMDB_PROXY_URL", "")
             )
             
             # 加载TVDB配置
