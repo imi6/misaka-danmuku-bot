@@ -56,6 +56,17 @@ class WebhookHandler:
             event_type = data.get('Event', '')
             logger.info(f"📡 收到Emby通知，事件类型: {event_type}")
             
+            # 记录完整的Emby消息体到日志（DEBUG级别）
+            logger.debug(f"📋 完整Emby消息体:\n{json.dumps(data, indent=2, ensure_ascii=False)}")
+            
+            # 记录关键信息到INFO级别日志
+            item_info = data.get('Item', {})
+            session_info = data.get('Session', {})
+            user_info = data.get('User', {})
+            logger.info(f"📺 媒体信息: {item_info.get('Name', '未知')} (类型: {item_info.get('Type', '未知')})")
+            logger.info(f"👤 用户信息: {user_info.get('Name', '未知')} | 设备: {session_info.get('DeviceName', '未知')} ({session_info.get('Client', '未知')})")
+            logger.info(f"🔗 提供商ID: {item_info.get('ProviderIds', {})}")
+            
             # 只处理播放开始事件
             if event_type != 'playback.start':
                 logger.info(f"ℹ️ 忽略非播放开始事件: {event_type}")
@@ -134,6 +145,10 @@ class WebhookHandler:
             imdb_id = provider_ids.get('Imdb')
             tvdb_id = provider_ids.get('Tvdb') or provider_ids.get('TheTVDB')
             
+            # 调试日志：显示提供商ID信息
+            logger.debug(f"🔍 媒体提供商ID信息: {provider_ids}")
+            logger.debug(f"🎯 提取的TMDB ID: {tmdb_id}, IMDB ID: {imdb_id}, TVDB ID: {tvdb_id}")
+            
             # 构建完整标题
             if media_type == 'Episode' and series_name:
                 if season_number and episode_number:
@@ -207,8 +222,16 @@ class WebhookHandler:
             media_type = media_info.get('type', '')
             title = media_info.get('title')
             
-            if not tmdb_id or not title:
-                logger.info("ℹ️ 媒体缺少必要信息（TMDB ID或标题），跳过智能管理")
+            # 详细检查缺失的信息
+            missing_info = []
+            if not tmdb_id:
+                missing_info.append('TMDB ID')
+            if not title:
+                missing_info.append('标题')
+            
+            if missing_info:
+                logger.info(f"ℹ️ 媒体缺少必要信息（{', '.join(missing_info)}），跳过智能管理")
+                logger.debug(f"🔍 媒体信息详情: TMDB ID='{tmdb_id}', 标题='{title}', 类型='{media_type}'")
                 return
             
             # 根据媒体类型选择处理方式

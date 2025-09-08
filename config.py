@@ -546,6 +546,9 @@ class ConfigManager:
                 api_timeout=int(os.getenv("API_TIMEOUT", 60))
             )
             
+            # 动态设置日志级别
+            self._update_logging_level()
+            
             if not ConfigManager._initialization_logged:
                 logger.info("✅ 配置加载成功")
                 ConfigManager._initialization_logged = True
@@ -553,6 +556,27 @@ class ConfigManager:
         except Exception as e:
             logger.error(f"❌ 配置加载失败: {e}")
             raise
+    
+    def _update_logging_level(self):
+        """根据配置动态更新日志级别"""
+        try:
+            # 获取当前日志级别
+            log_level = getattr(logging, self._app.log_level, logging.INFO)
+            
+            # 更新根日志记录器的级别
+            root_logger = logging.getLogger()
+            root_logger.setLevel(log_level)
+            
+            # 更新所有处理器的级别
+            for handler in root_logger.handlers:
+                handler.setLevel(log_level)
+            
+            # 如果是DEBUG级别，记录调试信息
+            if self._app.log_level == "DEBUG":
+                logger.debug(f"🔧 日志级别已设置为: {self._app.log_level}")
+                
+        except Exception as e:
+            logger.error(f"❌ 更新日志级别失败: {e}")
     
     @property
     def telegram(self) -> TelegramConfig:
