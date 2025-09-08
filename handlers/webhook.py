@@ -1,5 +1,6 @@
 import logging
 import json
+import os
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -17,6 +18,8 @@ class WebhookHandler:
     def __init__(self, bot: Optional[Bot] = None):
         self.config = ConfigManager()
         self.bot = bot
+        # 从环境变量读取时区配置，默认为Asia/Shanghai
+        self.timezone = ZoneInfo(os.getenv('TZ', 'Asia/Shanghai'))
         
     def validate_api_key(self, provided_key: str) -> bool:
         """验证API密钥"""
@@ -486,18 +489,17 @@ class WebhookHandler:
             # 检查时间段判断机制：入库时间是否早于24小时
             if fetched_at:
                 try:
-                    # 解析fetchedAt时间（ISO 8601格式）并转换为上海时区
+                    # 解析fetchedAt时间（ISO 8601格式）并转换为配置的时区
                     fetched_time = datetime.fromisoformat(fetched_at.replace('Z', '+00:00'))
-                    shanghai_tz = ZoneInfo('Asia/Shanghai')
-                    fetched_time_shanghai = fetched_time.astimezone(shanghai_tz)
-                    current_time_shanghai = datetime.now(shanghai_tz)
-                    time_diff = current_time_shanghai - fetched_time_shanghai
+                    fetched_time_local = fetched_time.astimezone(self.timezone)
+                    current_time_local = datetime.now(self.timezone)
+                    time_diff = current_time_local - fetched_time_local
                     
                     if time_diff < timedelta(hours=24):
-                        logger.info(f"⏰ 电影入库时间在24小时内 ({time_diff}），跳过刷新 (源ID: {source_id}) [上海时区]")
+                        logger.info(f"⏰ 电影入库时间在24小时内 ({time_diff}），跳过刷新 (源ID: {source_id}) [时区: {self.timezone}]")
                         return
                     else:
-                        logger.info(f"⏰ 电影入库时间超过24小时 ({time_diff}），执行刷新 (源ID: {source_id}) [上海时区]")
+                        logger.info(f"⏰ 电影入库时间超过24小时 ({time_diff}），执行刷新 (源ID: {source_id}) [时区: {self.timezone}]")
                 except Exception as e:
                     logger.warning(f"⚠️ 解析入库时间失败，继续执行刷新: {e}")
             else:
@@ -610,18 +612,17 @@ class WebhookHandler:
                 # 检查时间段判断机制：入库时间是否早于24小时
                 if fetched_at:
                     try:
-                        # 解析fetchedAt时间（ISO 8601格式）并转换为上海时区
+                        # 解析fetchedAt时间（ISO 8601格式）并转换为配置的时区
                         fetched_time = datetime.fromisoformat(fetched_at.replace('Z', '+00:00'))
-                        shanghai_tz = ZoneInfo('Asia/Shanghai')
-                        fetched_time_shanghai = fetched_time.astimezone(shanghai_tz)
-                        current_time_shanghai = datetime.now(shanghai_tz)
-                        time_diff = current_time_shanghai - fetched_time_shanghai
+                        fetched_time_local = fetched_time.astimezone(self.timezone)
+                        current_time_local = datetime.now(self.timezone)
+                        time_diff = current_time_local - fetched_time_local
                         
                         if time_diff < timedelta(hours=24):
-                            logger.info(f"⏰ 第{episode}集入库时间在24小时内 ({time_diff}），跳过刷新 [上海时区]")
+                            logger.info(f"⏰ 第{episode}集入库时间在24小时内 ({time_diff}），跳过刷新 [时区: {self.timezone}]")
                             continue
                         else:
-                            logger.info(f"⏰ 第{episode}集入库时间超过24小时 ({time_diff}），执行刷新 [上海时区]")
+                            logger.info(f"⏰ 第{episode}集入库时间超过24小时 ({time_diff}），执行刷新 [时区: {self.timezone}]")
                     except Exception as e:
                         logger.warning(f"⚠️ 解析第{episode}集入库时间失败，继续执行刷新: {e}")
                 else:
