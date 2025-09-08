@@ -404,10 +404,31 @@ class WebhookHandler:
         try:
             logger.info(f"🔄 开始刷新电影 (源ID: {source_id})")
             
-            # 使用与电视剧刷新相同的API端点格式
+            # 先获取源的分集列表来获取episodeId
+            episodes_response = call_danmaku_api('GET', f'/library/source/{source_id}/episodes')
+            if not episodes_response or not episodes_response.get('success'):
+                logger.error(f"❌ 获取电影分集列表失败 (源ID: {source_id})")
+                return
+            
+            source_episodes = episodes_response.get('data', [])
+            if not source_episodes:
+                logger.warning(f"⚠️ 电影源暂无分集信息 (源ID: {source_id})")
+                return
+            
+            # 电影默认只取第一个分集的ID去刷新
+            first_episode = source_episodes[0]
+            episode_id = first_episode.get('episodeId')
+            
+            if not episode_id:
+                logger.error(f"❌ 未找到电影的episodeId (源ID: {source_id})")
+                return
+            
+            logger.info(f"🔄 刷新电影分集 (episodeId: {episode_id})")
+            
+            # 使用episodeId刷新电影
             response = call_danmaku_api(
                 method="POST",
-                endpoint=f"/library/source/{source_id}/refresh"
+                endpoint=f"/library/episode/{episode_id}/refresh"
             )
             
             if response and response.get('success'):
