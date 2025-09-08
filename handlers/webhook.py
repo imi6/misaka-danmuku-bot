@@ -229,10 +229,24 @@ class WebhookHandler:
             if not title:
                 missing_info.append('标题')
             
-            if missing_info:
+            # 对于电视剧，如果缺少TMDB ID但有剧集名称，尝试通过名称搜索
+            if not tmdb_id and media_type == 'Episode':
+                series_name = media_info.get('series_name')
+                year = media_info.get('year')
+                if series_name:
+                    logger.info(f"🔍 电视剧缺少TMDB ID，尝试通过剧集名称搜索: {series_name} ({year})")
+                    # 这里可以调用TMDB搜索API来获取TMDB ID
+                    # 暂时先记录日志，后续可以扩展搜索功能
+                    logger.debug(f"📺 剧集信息: 名称='{series_name}', 年份='{year}', 季数='{media_info.get('season')}', 集数='{media_info.get('episode')}'")
+            
+            # 如果仍然缺少关键信息，跳过智能管理
+            if not tmdb_id and not title:
                 logger.info(f"ℹ️ 媒体缺少必要信息（{', '.join(missing_info)}），跳过智能管理")
                 logger.debug(f"🔍 媒体信息详情: TMDB ID='{tmdb_id}', 标题='{title}', 类型='{media_type}'")
                 return
+            elif not tmdb_id:
+                logger.info(f"⚠️ 媒体缺少TMDB ID但有标题信息，继续处理: {title}")
+                logger.debug(f"🔍 媒体信息详情: TMDB ID='{tmdb_id}', 标题='{title}', 类型='{media_type}'")
             
             # 根据媒体类型选择处理方式
             if media_type == 'Movie':
@@ -362,9 +376,13 @@ class WebhookHandler:
                 final_matches = exact_matches
             
             if not final_matches:
-                # 未找到匹配项：使用TMDB ID自动导入
-                logger.info(f"📥 未找到匹配项，开始自动导入: {series_name} S{season_num}")
-                await self._import_episodes(tmdb_id, season_num, [episode_num, episode_num + 1])
+                # 未找到匹配项：检查是否有TMDB ID进行自动导入
+                if tmdb_id:
+                    logger.info(f"📥 未找到匹配项，开始自动导入: {series_name} S{season_num} (TMDB: {tmdb_id})")
+                    await self._import_episodes(tmdb_id, season_num, [episode_num, episode_num + 1])
+                else:
+                    logger.info(f"ℹ️ 未找到匹配项且缺少TMDB ID，无法自动导入: {series_name} S{season_num}")
+                    logger.debug(f"💡 建议: 请在Emby中为该剧集添加TMDB刮削信息，或手动导入到弹幕库中")
             else:
                 # 存在匹配项：使用refresh功能更新
                 selected_match = final_matches[0]
@@ -379,7 +397,8 @@ class WebhookHandler:
                         if sources:
                             source_id = sources[0].get('sourceId')
                             if source_id:
-                                await self._refresh_episodes(source_id, [episode_num, episode_num + 1], tmdb_id, season_num)
+                                # 只有在有TMDB ID时才传递，否则传递None跳过导入
+                                await self._refresh_episodes(source_id, [episode_num, episode_num + 1], tmdb_id if tmdb_id else None, season_num)
                             else:
                                 logger.error(f"❌ 无法获取源ID: {selected_match.get('title')}")
                         else:
@@ -506,13 +525,13 @@ class WebhookHandler:
     
 
      
-    async def _refresh_episodes(self, source_id: str, episodes: list, tmdb_id: str, season_num: int):
+    async def _refresh_episodes(self, source_id: str, episodes: list, tmdb_id: Optional[str], season_num: int):
         """刷新指定集数
         
         Args:
             source_id: 源ID
             episodes: 集数列表
-            tmdb_id: TMDB ID
+            tmdb_id: TMDB ID（可选，为None时跳过导入操作）
             season_num: 季度号
         """
         try:
@@ -533,9 +552,12 @@ class WebhookHandler:
             for episode in episodes:
                 episode_id = episode_map.get(episode)
                 if not episode_id:
-                    logger.warning(f"⚠️ 未找到第{episode}集的episodeId，尝试导入")
-                    # 当集数不存在时，尝试导入该集
-                    await self._import_single_episode(tmdb_id, season_num, episode)
+                    if tmdb_id:
+                        logger.warning(f"⚠️ 未找到第{episode}集的episodeId，尝试导入")
+                        # 当集数不存在且有TMDB ID时，尝试导入该集
+                        await self._import_single_episode(tmdb_id, season_num, episode)
+                    else:
+                        logger.info(f"ℹ️ 未找到第{episode}集的episodeId且缺少TMDB ID，跳过导入")
                     continue
                 
                 logger.info(f"🔄 刷新集数: E{episode:02d} (episodeId: {episode_id})")
