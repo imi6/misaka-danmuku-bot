@@ -1,7 +1,7 @@
 import logging
 import json
 from typing import Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 from telegram import Bot
 from config import ConfigManager
 from handlers.import_url import get_library_data, search_video_by_keyword
@@ -476,10 +476,29 @@ class WebhookHandler:
             # 电影默认只取第一个分集的ID去刷新
             first_episode = source_episodes[0]
             episode_id = first_episode.get('episodeId')
+            fetched_at = first_episode.get('fetchedAt')
             
             if not episode_id:
                 logger.error(f"❌ 未找到电影的episodeId (源ID: {source_id})")
                 return
+            
+            # 检查时间段判断机制：入库时间是否早于24小时
+            if fetched_at:
+                try:
+                    # 解析fetchedAt时间（ISO 8601格式）
+                    fetched_time = datetime.fromisoformat(fetched_at.replace('Z', '+00:00'))
+                    current_time = datetime.now(fetched_time.tzinfo)
+                    time_diff = current_time - fetched_time
+                    
+                    if time_diff < timedelta(hours=24):
+                        logger.info(f"⏰ 电影入库时间在24小时内 ({time_diff}），跳过刷新 (源ID: {source_id})")
+                        return
+                    else:
+                        logger.info(f"⏰ 电影入库时间超过24小时 ({time_diff}），执行刷新 (源ID: {source_id})")
+                except Exception as e:
+                    logger.warning(f"⚠️ 解析入库时间失败，继续执行刷新: {e}")
+            else:
+                logger.info(f"ℹ️ 未找到入库时间信息，继续执行刷新 (源ID: {source_id})")
             
             logger.info(f"🔄 刷新电影分集 (episodeId: {episode_id})")
             
@@ -562,12 +581,18 @@ class WebhookHandler:
                 logger.warning(f"⚠️ 源暂无分集信息: source_id={source_id}")
                 return
             
-            # 创建集数索引到episodeId的映射
-            episode_map = {ep.get('episodeIndex'): ep.get('episodeId') for ep in source_episodes if ep.get('episodeId')}
+            # 创建集数索引到集信息的映射（包含episodeId和fetchedAt）
+            episode_map = {}
+            for ep in source_episodes:
+                if ep.get('episodeId'):
+                    episode_map[ep.get('episodeIndex')] = {
+                        'episodeId': ep.get('episodeId'),
+                        'fetchedAt': ep.get('fetchedAt')
+                    }
             
             for episode in episodes:
-                episode_id = episode_map.get(episode)
-                if not episode_id:
+                episode_info = episode_map.get(episode)
+                if not episode_info:
                     if tmdb_id:
                         logger.warning(f"⚠️ 未找到第{episode}集的episodeId，尝试导入")
                         # 当集数不存在且有TMDB ID时，尝试导入该集
@@ -575,6 +600,27 @@ class WebhookHandler:
                     else:
                         logger.info(f"ℹ️ 未找到第{episode}集的episodeId且缺少TMDB ID，跳过导入")
                     continue
+                
+                episode_id = episode_info['episodeId']
+                fetched_at = episode_info['fetchedAt']
+                
+                # 检查时间段判断机制：入库时间是否早于24小时
+                if fetched_at:
+                    try:
+                        # 解析fetchedAt时间（ISO 8601格式）
+                        fetched_time = datetime.fromisoformat(fetched_at.replace('Z', '+00:00'))
+                        current_time = datetime.now(fetched_time.tzinfo)
+                        time_diff = current_time - fetched_time
+                        
+                        if time_diff < timedelta(hours=24):
+                            logger.info(f"⏰ 第{episode}集入库时间在24小时内 ({time_diff}），跳过刷新")
+                            continue
+                        else:
+                            logger.info(f"⏰ 第{episode}集入库时间超过24小时 ({time_diff}），执行刷新")
+                    except Exception as e:
+                        logger.warning(f"⚠️ 解析第{episode}集入库时间失败，继续执行刷新: {e}")
+                else:
+                    logger.info(f"ℹ️ 第{episode}集未找到入库时间信息，继续执行刷新")
                 
                 logger.info(f"🔄 刷新集数: E{episode:02d} (episodeId: {episode_id})")
                 
