@@ -433,6 +433,69 @@ class ConfigManager:
         self._load_config()
         logger.info("🔄 配置已重新加载")
     
+    def add_allowed_user(self, user_id: int) -> bool:
+        """添加允许的用户ID
+        
+        Args:
+            user_id: 用户ID
+            
+        Returns:
+            bool: 是否添加成功
+        """
+        if not isinstance(user_id, int) or user_id <= 0:
+            logger.warning(f"⚠️ 无效的用户ID: {user_id}")
+            return False
+            
+        if user_id in self._telegram.allowed_user_ids:
+            logger.info(f"ℹ️ 用户ID {user_id} 已在允许列表中")
+            return True
+            
+        self._telegram.allowed_user_ids.append(user_id)
+        logger.info(f"✅ 已添加用户ID {user_id} 到允许列表")
+        return True
+    
+    def remove_allowed_user(self, user_id: int) -> bool:
+        """移除允许的用户ID
+        
+        Args:
+            user_id: 用户ID
+            
+        Returns:
+            bool: 是否移除成功
+        """
+        if not isinstance(user_id, int) or user_id <= 0:
+            logger.warning(f"⚠️ 无效的用户ID: {user_id}")
+            return False
+            
+        # 检查是否为管理员，管理员不能被移除
+        if user_id in self._telegram.admin_user_ids:
+            logger.warning(f"⚠️ 不能移除管理员用户ID: {user_id}")
+            return False
+            
+        if user_id not in self._telegram.allowed_user_ids:
+            logger.info(f"ℹ️ 用户ID {user_id} 不在允许列表中")
+            return True
+            
+        self._telegram.allowed_user_ids.remove(user_id)
+        logger.info(f"✅ 已从允许列表移除用户ID {user_id}")
+        return True
+    
+    def get_allowed_users(self) -> List[int]:
+        """获取允许的用户ID列表"""
+        return self._telegram.allowed_user_ids.copy()
+    
+    def get_admin_users(self) -> List[int]:
+        """获取管理员用户ID列表"""
+        return self._telegram.admin_user_ids.copy()
+    
+    def is_user_allowed(self, user_id: int) -> bool:
+        """检查用户是否被允许"""
+        return user_id in self._telegram.allowed_user_ids
+    
+    def is_user_admin(self, user_id: int) -> bool:
+        """检查用户是否为管理员"""
+        return user_id in self._telegram.admin_user_ids
+    
     def get_config_summary(self) -> Dict[str, Any]:
         """获取配置摘要（隐藏敏感信息）"""
         return {

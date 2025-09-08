@@ -234,6 +234,7 @@ async def _setup_bot_commands(application: Application):
         BotCommand("url", "为已存在的数据源导入指定集数"),
         BotCommand("refresh", "刷新数据源"),
         BotCommand("tokens", "管理API令牌"),
+        BotCommand("users", "管理用户权限（仅管理员）"),
         BotCommand("help", "查看帮助信息"),
         BotCommand("cancel", "取消当前操作")
     ]
@@ -489,6 +490,21 @@ def _setup_handlers(application, handlers_module, callback_module):
     )
     application.add_handler(refresh_callback_handler)
     current_handlers["refresh_callback_handler"] = refresh_callback_handler
+    
+    # 导入并注册用户管理处理器
+    from handlers.user_management import create_user_management_handler
+    user_management_handler = create_user_management_handler()
+    application.add_handler(user_management_handler)
+    current_handlers["user_management_handler"] = user_management_handler
+    
+    # 导入并注册用户管理回调处理器
+    from callback.user_management import handle_user_management_callback
+    user_management_callback_handler = CallbackQueryHandler(
+        _wrap_with_session_management(handle_user_management_callback),
+        pattern=r'(add_user|remove_user|refresh_users|confirm_remove:.*|cancel_remove)'
+    )
+    application.add_handler(user_management_callback_handler)
+    current_handlers["user_management_callback_handler"] = user_management_callback_handler
 
 
 async def init_bot() -> Application:
