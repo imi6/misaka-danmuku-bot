@@ -1,0 +1,4 @@
+# This file ensures the app directory is tracked by git
+# The app directory will contain:
+# - config/ (configuration files)
+# - logs/ (log files)

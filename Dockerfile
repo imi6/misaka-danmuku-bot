@@ -65,7 +65,7 @@ COPY --chown=botuser:botgroup handlers/ ./handlers/
 COPY --chown=botuser:botgroup callback/ ./callback/
 COPY --chown=botuser:botgroup utils/ ./utils/
 
-# 复制app目录（如果存在配置文件）
+# 复制app目录结构（包含.gitkeep文件）
 COPY --chown=botuser:botgroup app/ ./app/
 
 # 配置环境变量（默认值，可通过docker run或compose覆盖）
