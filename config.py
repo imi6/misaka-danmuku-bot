@@ -8,10 +8,17 @@ from dotenv import load_dotenv
 # 加载.env文件中的环境变量
 load_dotenv()
 
-# 配置日志
+# 配置日志 - 使用app/logs目录
+log_dir = Path("app/logs")
+log_dir.mkdir(parents=True, exist_ok=True)
+
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_dir / "app.log"),
+        logging.StreamHandler()
+    ]
 )
 logger = logging.getLogger(__name__)
 
@@ -36,7 +43,8 @@ class TelegramConfig:
         # 如果没有配置管理员，则所有允许的用户都是管理员
         if not self.admin_user_ids:
             self.admin_user_ids = self.allowed_user_ids.copy()
-            logger.info("ℹ️ 未配置ADMIN_USER_IDS，所有ALLOWED_USER_IDS都将作为管理员")
+            if not ConfigManager._initialization_logged:
+                logger.info("ℹ️ 未配置ADMIN_USER_IDS，所有ALLOWED_USER_IDS都将作为管理员")
         
         # 验证超时配置
         if self.connect_timeout <= 0:
@@ -93,19 +101,23 @@ class TMDBConfig:
     
     def __post_init__(self):
         if not self.api_key or not self.api_key.strip():
-            logger.info("ℹ️ 未配置 TMDB API Key，将跳过 TMDB 辅助搜索")
+            if not ConfigManager._initialization_logged:
+                logger.info("ℹ️ 未配置 TMDB API Key，将跳过 TMDB 辅助搜索")
             return
             
         placeholder_values = ['your_tmdb_api_key_here', 'YOUR_TMDB_API_KEY', 'placeholder']
         if self.api_key.strip() in placeholder_values:
-            logger.info("ℹ️ TMDB API Key为占位符值，请配置真实的API密钥")
+            if not ConfigManager._initialization_logged:
+                logger.info("ℹ️ TMDB API Key为占位符值，请配置真实的API密钥")
             return
             
         # 验证API密钥
         if self._validate_api_key():
-            logger.info("✅ TMDB API 配置已加载并验证通过，将启用辅助搜索功能")
+            if not ConfigManager._initialization_logged:
+                logger.info("✅ TMDB API 配置已加载并验证通过，将启用辅助搜索功能")
         else:
-            logger.info("❌ TMDB API Key验证失败，请检查密钥是否正确")
+            if not ConfigManager._initialization_logged:
+                logger.info("❌ TMDB API Key验证失败，请检查密钥是否正确")
     
     @property
     def enabled(self) -> bool:
@@ -149,15 +161,18 @@ class TVDBConfig:
     
     def __post_init__(self):
         if not self.api_key or not self.api_key.strip():
-            logger.info("ℹ️ 未配置 TVDB API Key，将跳过 TVDB 辅助搜索")
+            if not ConfigManager._initialization_logged:
+                logger.info("ℹ️ 未配置 TVDB API Key，将跳过 TVDB 辅助搜索")
             return
             
         placeholder_values = ['your_tvdb_api_key_here', 'YOUR_TVDB_API_KEY', 'placeholder']
         if self.api_key.strip() in placeholder_values:
-            logger.info("ℹ️ TVDB API Key为占位符值，请配置真实的API密钥")
+            if not ConfigManager._initialization_logged:
+                logger.info("ℹ️ TVDB API Key为占位符值，请配置真实的API密钥")
             return
             
-        logger.info("✅ TVDB API 配置已加载")
+        if not ConfigManager._initialization_logged:
+            logger.info("✅ TVDB API 配置已加载")
     
     @property
     def enabled(self) -> bool:
@@ -179,15 +194,18 @@ class BGMConfig:
     
     def __post_init__(self):
         if not self.access_token or not self.access_token.strip():
-            logger.info("ℹ️ 未配置 BGM Access Token，将使用网页爬虫方式获取数据")
+            if not ConfigManager._initialization_logged:
+                logger.info("ℹ️ 未配置 BGM Access Token，将使用网页爬虫方式获取数据")
             return
             
         placeholder_values = ['your_bgm_access_token_here', 'YOUR_BGM_ACCESS_TOKEN', 'placeholder']
         if self.access_token.strip() in placeholder_values:
-            logger.info("ℹ️ BGM Access Token为占位符值，将使用网页爬虫方式获取数据")
+            if not ConfigManager._initialization_logged:
+                logger.info("ℹ️ BGM Access Token为占位符值，将使用网页爬虫方式获取数据")
             return
             
-        logger.info("✅ BGM API 配置已加载，将使用API方式获取数据")
+        if not ConfigManager._initialization_logged:
+            logger.info("✅ BGM API 配置已加载，将使用API方式获取数据")
     
     @property
     def enabled(self) -> bool:
@@ -210,7 +228,7 @@ class ProxyConfig:
         http_proxy = os.getenv('HTTP_PROXY') or os.getenv('http_proxy')
         https_proxy = os.getenv('HTTPS_PROXY') or os.getenv('https_proxy')
         
-        if http_proxy or https_proxy:
+        if (http_proxy or https_proxy) and not ConfigManager._initialization_logged:
             logger.info(f"🌐 检测到Docker代理配置: HTTP_PROXY={http_proxy}, HTTPS_PROXY={https_proxy}")
     
     @property
@@ -235,13 +253,15 @@ class WebhookConfig:
     
     def __post_init__(self):
         if not self.api_key or not self.api_key.strip():
-            logger.info("ℹ️ 未配置 WEBHOOK_API_KEY，webhook功能将被禁用")
+            if not ConfigManager._initialization_logged:
+                logger.info("ℹ️ 未配置 WEBHOOK_API_KEY，webhook功能将被禁用")
             self.enabled = False
             return
             
         placeholder_values = ['your_webhook_api_key_here', 'YOUR_WEBHOOK_API_KEY', 'placeholder']
         if self.api_key.strip() in placeholder_values:
-            logger.info("ℹ️ WEBHOOK_API_KEY 为占位符值，webhook功能将被禁用")
+            if not ConfigManager._initialization_logged:
+                logger.info("ℹ️ WEBHOOK_API_KEY 为占位符值，webhook功能将被禁用")
             self.enabled = False
             return
             
@@ -251,7 +271,8 @@ class WebhookConfig:
             self.port = 7769
             
         self.enabled = True
-        logger.info(f"✅ Webhook配置已启用，监听端口: {self.port}")
+        if not ConfigManager._initialization_logged:
+            logger.info(f"✅ Webhook配置已启用，监听端口: {self.port}")
 
 
 @dataclass
@@ -280,7 +301,17 @@ class AppConfig:
 class ConfigManager:
     """配置管理器"""
     
+    # 类级别标志，用于控制初始化日志记录
+    _initialization_logged = False
+    
     def __init__(self):
+        # 使用app/config目录存储配置文件
+        self.config_file_path = Path("app/config/config.json")
+        self.user_config_file_path = Path("app/config/user.json")
+        self._json_config = {}
+        self._user_config = {}
+        self._load_json_config()
+        self._load_user_config()
         self._telegram: Optional[TelegramConfig] = None
         self._danmaku_api: Optional[DanmakuAPIConfig] = None
         self._tmdb: Optional[TMDBConfig] = None
@@ -290,6 +321,70 @@ class ConfigManager:
         self._proxy: Optional[ProxyConfig] = None
         self._app: Optional[AppConfig] = None
         self._load_config()
+    
+    def _load_json_config(self):
+        """加载JSON配置文件"""
+        if not self.config_file_path.exists():
+            if not ConfigManager._initialization_logged:
+                logger.info(f"ℹ️ JSON配置文件不存在，将使用默认配置: {self.config_file_path}")
+            return
+        
+        try:
+            import json
+            with open(self.config_file_path, 'r', encoding='utf-8') as f:
+                config_data = json.load(f)
+                self._json_config = config_data
+                if not ConfigManager._initialization_logged:
+                    logger.info(f"✅ JSON配置文件已加载: {self.config_file_path}")
+        except json.JSONDecodeError as e:
+            logger.error(f"❌ JSON配置文件格式错误: {e}")
+            self._json_config = {}
+        except Exception as e:
+            logger.error(f"❌ 加载JSON配置文件失败: {e}")
+            self._json_config = {}
+    
+    def _load_user_config(self):
+        """加载用户配置文件"""
+        if not self.user_config_file_path.exists():
+            if not ConfigManager._initialization_logged:
+                logger.info(f"ℹ️ 用户配置文件不存在，将使用默认配置: {self.user_config_file_path}")
+            self._user_config = {"allowed_user_ids": [], "admin_user_ids": []}
+            return
+        
+        try:
+            import json
+            with open(self.user_config_file_path, 'r', encoding='utf-8') as f:
+                self._user_config = json.load(f)
+                if not ConfigManager._initialization_logged:
+                    logger.info(f"✅ 用户配置文件已加载: {self.user_config_file_path}")
+        except json.JSONDecodeError as e:
+            logger.error(f"❌ 用户配置文件格式错误: {e}")
+            self._user_config = {"allowed_user_ids": [], "admin_user_ids": []}
+        except Exception as e:
+            logger.error(f"❌ 加载用户配置文件失败: {e}")
+            self._user_config = {"allowed_user_ids": [], "admin_user_ids": []}
+    
+    def _save_user_config(self):
+        """保存用户配置文件"""
+        try:
+            import json
+            # 确保目录存在
+            self.user_config_file_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # 准备保存的数据
+            save_data = {
+                "allowed_user_ids": self._telegram.allowed_user_ids if self._telegram else [],
+                "admin_user_ids": self._telegram.admin_user_ids if self._telegram else []
+            }
+            
+            with open(self.user_config_file_path, 'w', encoding='utf-8') as f:
+                json.dump(save_data, f, indent=2, ensure_ascii=False)
+            
+            logger.info(f"✅ 用户配置已保存: {self.user_config_file_path}")
+            return True
+        except Exception as e:
+            logger.error(f"❌ 保存用户配置失败: {e}")
+            return False
     
     def _parse_user_ids(self, user_ids_str: str) -> List[int]:
         """解析用户ID字符串"""
@@ -309,12 +404,21 @@ class ConfigManager:
     def _load_config(self):
         """加载配置"""
         try:
-            # 加载Telegram配置
+            # 加载Telegram配置（优先使用用户配置文件中的用户ID）
             telegram_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
-            user_ids_str = os.getenv("ALLOWED_USER_IDS", "")
-            user_ids = self._parse_user_ids(user_ids_str)
-            admin_ids_str = os.getenv("ADMIN_USER_IDS", "")
-            admin_ids = self._parse_user_ids(admin_ids_str)
+            
+            # 优先从用户配置文件读取用户ID，环境变量作为备选
+            user_ids = self._user_config.get("allowed_user_ids", [])
+            if not user_ids:  # 只有当JSON文件中没有配置时才使用环境变量
+                user_ids_str = os.getenv("ALLOWED_USER_IDS", "")
+                if user_ids_str.strip():
+                    user_ids = self._parse_user_ids(user_ids_str)
+            
+            admin_ids = self._user_config.get("admin_user_ids", [])
+            if not admin_ids:  # 只有当JSON文件中没有配置时才使用环境变量
+                admin_ids_str = os.getenv("ADMIN_USER_IDS", "")
+                if admin_ids_str.strip():
+                    admin_ids = self._parse_user_ids(admin_ids_str)
             
             self._telegram = TelegramConfig(
                 bot_token=telegram_token,
@@ -365,7 +469,9 @@ class ConfigManager:
                 api_timeout=int(os.getenv("API_TIMEOUT", 60))
             )
             
-            logger.info("✅ 配置加载成功")
+            if not ConfigManager._initialization_logged:
+                logger.info("✅ 配置加载成功")
+                ConfigManager._initialization_logged = True
             
         except Exception as e:
             logger.error(f"❌ 配置加载失败: {e}")
@@ -452,6 +558,8 @@ class ConfigManager:
             
         self._telegram.allowed_user_ids.append(user_id)
         logger.info(f"✅ 已添加用户ID {user_id} 到允许列表")
+        # 自动保存用户配置到JSON文件
+        self._save_user_config()
         return True
     
     def remove_allowed_user(self, user_id: int) -> bool:
@@ -478,6 +586,8 @@ class ConfigManager:
             
         self._telegram.allowed_user_ids.remove(user_id)
         logger.info(f"✅ 已从允许列表移除用户ID {user_id}")
+        # 自动保存用户配置到JSON文件
+        self._save_user_config()
         return True
     
     def get_allowed_users(self) -> List[int]:

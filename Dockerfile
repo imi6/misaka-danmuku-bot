@@ -53,6 +53,10 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir /wheels/* && \
     rm -rf /wheels ~/.cache/pip
 
+# 创建应用程序目录结构（用于数据持久化）
+RUN mkdir -p /app/app/config /app/app/logs && \
+    chown -R botuser:botgroup /app/app
+
 # 复制项目代码（复制所有必要文件）
 COPY --chown=botuser:botgroup bot.py .
 COPY --chown=botuser:botgroup config.py .
@@ -60,6 +64,9 @@ COPY --chown=botuser:botgroup webhook_server.py .
 COPY --chown=botuser:botgroup handlers/ ./handlers/
 COPY --chown=botuser:botgroup callback/ ./callback/
 COPY --chown=botuser:botgroup utils/ ./utils/
+
+# 复制app目录（如果存在配置文件）
+COPY --chown=botuser:botgroup app/ ./app/
 
 # 配置环境变量（默认值，可通过docker run或compose覆盖）
 ENV PYTHONUNBUFFERED=1 \

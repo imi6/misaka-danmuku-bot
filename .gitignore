@@ -3,3 +3,6 @@ venv/*
 __pycache__
 __pycache__/*
 .env
+# App目录结构配置文件
+app/config/
+app/logs/

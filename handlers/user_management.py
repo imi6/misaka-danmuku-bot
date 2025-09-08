@@ -6,9 +6,62 @@ from utils.permission import check_admin_permission
 
 logger = logging.getLogger(__name__)
 
-# 状态常量
+# 定义状态
 USER_ID_INPUT = 1
 CONFIRM_ACTION = 2
+
+async def show_users_list_as_new_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """发送新消息显示用户列表（用于添加用户后）"""
+    try:
+        config_manager = ConfigManager()
+        allowed_users = config_manager.get_allowed_users()
+        admin_users = config_manager.get_admin_users()
+        
+        # 构建消息文本
+        message_lines = ["👥 **用户权限管理**\n"]
+        
+        # 显示管理员列表
+        message_lines.append("🔑 **超级管理员** (不可删除):")
+        if admin_users:
+            for admin_id in admin_users:
+                message_lines.append(f"   • `{admin_id}`")
+        else:
+            message_lines.append("   暂无管理员")
+        
+        message_lines.append("")
+        
+        # 显示普通用户列表
+        regular_users = [uid for uid in allowed_users if uid not in admin_users]
+        message_lines.append("👤 **普通用户**:")
+        if regular_users:
+            for user_id in regular_users:
+                message_lines.append(f"   • `{user_id}`")
+        else:
+            message_lines.append("   暂无普通用户")
+        
+        # 构建键盘
+        keyboard = [
+            [InlineKeyboardButton("➕ 添加用户", callback_data="add_user")],
+        ]
+        
+        # 如果有普通用户，添加删除按钮
+        if regular_users:
+            keyboard.append([InlineKeyboardButton("🗑️ 删除用户", callback_data="remove_user")])
+        
+        keyboard.append([InlineKeyboardButton("🔄 刷新列表", callback_data="refresh_users")])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        message_text = "\n".join(message_lines)
+        
+        await update.message.reply_text(
+            message_text,
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+        
+    except Exception as e:
+        logger.error(f"发送用户列表消息时发生错误: {e}")
+        await update.message.reply_text("❌ 获取用户列表失败")
 
 @check_admin_permission
 async def show_users_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -61,11 +114,20 @@ async def show_users_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode='Markdown'
             )
         else:
-            await update.callback_query.edit_message_text(
-                message_text,
-                reply_markup=reply_markup,
-                parse_mode='Markdown'
-            )
+            # 检查消息内容是否相同，避免Telegram API错误
+            try:
+                await update.callback_query.edit_message_text(
+                    message_text,
+                    reply_markup=reply_markup,
+                    parse_mode='Markdown'
+                )
+            except Exception as edit_error:
+                # 如果编辑失败（通常是因为内容相同），只回答callback query
+                if "not modified" in str(edit_error).lower():
+                    await update.callback_query.answer("✅ 列表已是最新状态")
+                else:
+                    # 其他错误重新抛出
+                    raise edit_error
         
         return ConversationHandler.END
         
@@ -120,7 +182,7 @@ async def start_remove_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode='Markdown'
     )
     
-    return ConversationHandler.END
+    return CONFIRM_ACTION
 
 @check_admin_permission
 async def handle_user_id_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -155,10 +217,8 @@ async def handle_user_id_input(update: Update, context: ContextTypes.DEFAULT_TYP
         else:
             success = config_manager.add_allowed_user(user_id)
             if success:
-                await update.message.reply_text(
-                    f"✅ 已成功添加用户 `{user_id}` 到允许列表",
-                    parse_mode='Markdown'
-                )
+                # 成功添加用户后，直接显示更新后的用户列表
+                await show_users_list_as_new_message(update, context)
             else:
                 await update.message.reply_text(
                     f"❌ 添加用户 `{user_id}` 失败",
@@ -190,10 +250,8 @@ async def confirm_remove_user(update: Update, context: ContextTypes.DEFAULT_TYPE
     # 删除用户
     success = config_manager.remove_allowed_user(user_id)
     if success:
-        await update.callback_query.edit_message_text(
-            f"✅ 已成功从允许列表移除用户 `{user_id}`",
-            parse_mode='Markdown'
-        )
+        # 成功删除用户后，直接显示更新后的用户列表
+        await show_users_list(update, context)
     else:
         await update.callback_query.edit_message_text(
             f"❌ 移除用户 `{user_id}` 失败",
@@ -206,28 +264,39 @@ async def confirm_remove_user(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def cancel_remove_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """取消删除用户"""
     await update.callback_query.answer()
-    await update.callback_query.edit_message_text("❌ 已取消删除操作")
+    # 取消删除操作后，直接显示用户列表
+    await show_users_list(update, context)
     return ConversationHandler.END
 
 @check_admin_permission
 async def cancel_user_management(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """取消用户管理操作"""
     context.user_data.clear()
-    await update.message.reply_text("❌ 已取消用户管理操作")
+    # 取消操作后直接显示用户列表，而不是仅显示取消信息
+    await show_users_list_as_new_message(update, context)
     return ConversationHandler.END
 
 def create_user_management_handler():
     """创建用户管理ConversationHandler"""
     return ConversationHandler(
         entry_points=[
-            CommandHandler("users", show_users_list)
+            CommandHandler("users", show_users_list),
+            CallbackQueryHandler(start_add_user, pattern="^add_user$"),
+            CallbackQueryHandler(start_remove_user, pattern="^remove_user$"),
+            CallbackQueryHandler(lambda u, c: show_users_list(u, c), pattern="^refresh_users$")
         ],
         states={
             USER_ID_INPUT: [
                 MessageHandler(
                     filters.TEXT & ~filters.COMMAND,
                     handle_user_id_input
-                )
+                ),
+                CommandHandler("users", show_users_list)
+            ],
+            CONFIRM_ACTION: [
+                CallbackQueryHandler(confirm_remove_user, pattern="^confirm_remove:.*$"),
+                CallbackQueryHandler(cancel_remove_user, pattern="^cancel_remove$"),
+                CommandHandler("users", show_users_list)
             ]
         },
         fallbacks=[

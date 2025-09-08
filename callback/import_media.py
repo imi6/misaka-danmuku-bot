@@ -87,6 +87,11 @@ async def handle_import_auto_callback(update: Update, context: ContextTypes.DEFA
         from handlers.import_media import import_auto_season_selection
         return await import_auto_season_selection(update, context)
     
+    # 检查是否为非import_auto相关的回调数据，直接返回
+    if not query.data.startswith('{"action": "import_auto'):
+        logger.info(f"🔄 非import_auto回调数据，跳过处理: {query.data}")
+        return ConversationHandler.END
+    
     # 尝试解析JSON格式的回调数据
     try:
         callback_data = json.loads(query.data)

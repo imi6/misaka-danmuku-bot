@@ -496,15 +496,6 @@ def _setup_handlers(application, handlers_module, callback_module):
     user_management_handler = create_user_management_handler()
     application.add_handler(user_management_handler)
     current_handlers["user_management_handler"] = user_management_handler
-    
-    # 导入并注册用户管理回调处理器
-    from callback.user_management import handle_user_management_callback
-    user_management_callback_handler = CallbackQueryHandler(
-        _wrap_with_session_management(handle_user_management_callback),
-        pattern=r'(add_user|remove_user|refresh_users|confirm_remove:.*|cancel_remove)'
-    )
-    application.add_handler(user_management_callback_handler)
-    current_handlers["user_management_callback_handler"] = user_management_callback_handler
 
 
 async def init_bot() -> Application:
