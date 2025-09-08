@@ -227,6 +227,34 @@ class ProxyConfig:
 
 
 @dataclass
+class WebhookConfig:
+    """Webhook配置"""
+    port: int = 7769
+    api_key: str = ""
+    enabled: bool = False
+    
+    def __post_init__(self):
+        if not self.api_key or not self.api_key.strip():
+            logger.info("ℹ️ 未配置 WEBHOOK_API_KEY，webhook功能将被禁用")
+            self.enabled = False
+            return
+            
+        placeholder_values = ['your_webhook_api_key_here', 'YOUR_WEBHOOK_API_KEY', 'placeholder']
+        if self.api_key.strip() in placeholder_values:
+            logger.info("ℹ️ WEBHOOK_API_KEY 为占位符值，webhook功能将被禁用")
+            self.enabled = False
+            return
+            
+        # 验证端口范围
+        if not (1024 <= self.port <= 65535):
+            logger.warning(f"⚠️ webhook端口 {self.port} 不在有效范围内(1024-65535)，使用默认值7769")
+            self.port = 7769
+            
+        self.enabled = True
+        logger.info(f"✅ Webhook配置已启用，监听端口: {self.port}")
+
+
+@dataclass
 class AppConfig:
     """应用程序配置"""
     log_level: str = "INFO"
@@ -257,6 +285,8 @@ class ConfigManager:
         self._danmaku_api: Optional[DanmakuAPIConfig] = None
         self._tmdb: Optional[TMDBConfig] = None
         self._tvdb: Optional[TVDBConfig] = None
+        self._bgm: Optional[BGMConfig] = None
+        self._webhook: Optional[WebhookConfig] = None
         self._proxy: Optional[ProxyConfig] = None
         self._app: Optional[AppConfig] = None
         self._load_config()
@@ -318,7 +348,13 @@ class ConfigManager:
                 access_token=os.getenv("BGM_ACCESS_TOKEN", "")
             )
             
-            # 加载代理配置（基于Docker环境变量）
+            # 加载Webhook配置
+            self._webhook = WebhookConfig(
+                port=int(os.getenv("WEBHOOK_PORT", 7769)),
+                api_key=os.getenv("WEBHOOK_API_KEY", "")
+            )
+            
+            # 加载代理配置
             self._proxy = ProxyConfig()
             
             # 加载应用配置
@@ -367,8 +403,15 @@ class ConfigManager:
     def bgm(self) -> BGMConfig:
         """获取BGM配置"""
         if self._bgm is None:
-            raise RuntimeError("BGM配置未初始化")
+            raise RuntimeError("配置未初始化")
         return self._bgm
+    
+    @property
+    def webhook(self) -> WebhookConfig:
+        """获取Webhook配置"""
+        if self._webhook is None:
+            raise RuntimeError("配置未初始化")
+        return self._webhook
     
     @property
     def proxy(self) -> ProxyConfig:
@@ -418,6 +461,16 @@ class ConfigManager:
                 "api_key": "***" + self.tvdb.api_key[-4:] if self.tvdb.api_key else "未配置",
                 "base_url": self.tvdb.base_url
             },
+            "bgm": {
+                "enabled": self.bgm.enabled,
+                "base_url": self.bgm.base_url,
+                "has_access_token": bool(self.bgm.access_token)
+            },
+            "webhook": {
+                "enabled": self.webhook.enabled,
+                "port": self.webhook.port,
+                "has_api_key": bool(self.webhook.api_key)
+            },
             "proxy": {
                 "enabled": self.proxy.enabled,
                 "url": self.proxy.url if self.proxy.enabled else "未配置"
@@ -463,3 +516,8 @@ TVDB_ENABLED = config.tvdb.enabled
 BGM_ACCESS_TOKEN = config.bgm.access_token
 BGM_BASE_URL = config.bgm.base_url
 BGM_ENABLED = config.bgm.enabled
+
+# Webhook配置
+WEBHOOK_PORT = config.webhook.port
+WEBHOOK_API_KEY = config.webhook.api_key
+WEBHOOK_ENABLED = config.webhook.enabled

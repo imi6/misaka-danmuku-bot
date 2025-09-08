@@ -12,6 +12,7 @@ from watchdog.events import (
     FileCreatedEvent,
     FileDeletedEvent
 )
+from webhook_server import webhook_server
 
 # ------------------------------
 # Telegram 相关模块导入
@@ -534,6 +535,13 @@ async def init_bot() -> Application:
     except Exception as e:
         logger.warning(f"⚠️ 影视库缓存初始化失败: {e}")
 
+    # 步骤7: 设置webhook处理器的Bot实例
+    try:
+        from handlers.webhook import set_bot_instance
+        set_bot_instance(application.bot)
+    except Exception as e:
+        logger.warning(f"⚠️ Webhook处理器初始化失败: {e}")
+
     logger.info("✅ Initial bot handlers registered")
     return application
 
@@ -574,6 +582,13 @@ if __name__ == "__main__":
         """清理所有资源的异步函数"""
         logger.info("🛑 开始清理资源...")
         
+        # 停止webhook服务器
+        try:
+            await webhook_server.stop()
+            logger.info("🔌 Webhook server stopped")
+        except Exception as e:
+            logger.error(f"❌ 停止webhook服务器时出错: {e}")
+        
         # 停止热重载服务
         if file_observer is not None:
             try:
@@ -601,6 +616,12 @@ if __name__ == "__main__":
         
         # 获取配置管理器
         config_manager, _, _ = _import_modules()
+        
+        # 启动webhook服务器
+        try:
+            loop.run_until_complete(webhook_server.start())
+        except Exception as e:
+            logger.error(f"❌ Failed to start webhook server: {e}")
         
         # 设置 post_shutdown 回调来清理资源
         application.post_shutdown = cleanup_resources
