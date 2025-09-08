@@ -278,7 +278,7 @@ class WebhookHandler:
                 logger.warning("⚠️ 无法获取影视库数据")
                 return
             
-            matches = search_video_by_keyword(library_data, movie_title)
+            matches = search_video_by_keyword(library_data, movie_title, media_type='movie')
             
             # 电影严格匹配策略：优先完全匹配的标题
             exact_matches = [match for match in matches 
@@ -349,7 +349,7 @@ class WebhookHandler:
                 logger.warning("⚠️ 无法获取影视库数据")
                 return
             
-            matches = search_video_by_keyword(library_data, series_name)
+            matches = search_video_by_keyword(library_data, series_name, media_type='tv_series')
             
             # 优先匹配：名称 + 季度信息
             season_matches = []

@@ -283,8 +283,17 @@ async def init_library_cache():
         logger.warning("⚠️ 影视库缓存初始化失败，将在首次使用时重试")
     return data
 
-def search_video_by_keyword(library_data, keyword):
-    """根据关键词搜索影视，支持双向匹配和智能匹配"""
+def search_video_by_keyword(library_data, keyword, media_type=None):
+    """根据关键词搜索影视，支持双向匹配和智能匹配
+    
+    Args:
+        library_data: 影视库数据
+        keyword: 搜索关键词
+        media_type: 媒体类型过滤 ('movie' 或 'tv_series')，None表示不过滤
+    
+    Returns:
+        list: 匹配的影视列表
+    """
     keyword = keyword.lower().strip()
     matches = []
     exact_matches = []  # 精确匹配结果
@@ -292,6 +301,18 @@ def search_video_by_keyword(library_data, keyword):
     
     for anime in library_data:
         title = anime.get('title', '').lower()
+        
+        # 如果指定了媒体类型，进行类型过滤
+        if media_type:
+            anime_type = anime.get('type', '').lower()
+            if media_type == 'movie':
+                # 电影类型匹配
+                if anime_type not in ['movie', '电影']:
+                    continue
+            elif media_type == 'tv_series':
+                # 电视剧类型匹配（排除电影类型）
+                if anime_type in ['movie', '电影']:
+                    continue
         
         # 精确匹配（完全相等）
         if keyword == title:
