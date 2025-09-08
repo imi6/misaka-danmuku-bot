@@ -69,6 +69,7 @@ logging.basicConfig(
 # 设置第三方库的日志级别为 WARNING，减少噪音
 logging.getLogger('httpx').setLevel(logging.WARNING)
 logging.getLogger('httpcore').setLevel(logging.WARNING)
+logging.getLogger('urllib3').setLevel(logging.WARNING)
 logging.getLogger('telegram.ext._updater').setLevel(logging.WARNING)
 logging.getLogger('telegram.ext._application').setLevel(logging.WARNING)
 

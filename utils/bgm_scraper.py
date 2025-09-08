@@ -12,6 +12,7 @@ import asyncio
 import concurrent.futures
 from typing import Dict, Any, Optional
 import logging
+from utils.security import mask_sensitive_in_text
 
 # 导入配置
 try:
@@ -55,7 +56,7 @@ class BGMAPI:
         try:
             # 获取基本信息
             url = f"{self.base_url}/v0/subjects/{subject_id}"
-            logger.info(f"正在调用 BGM API: {url}")
+            logger.info(f"正在调用 BGM API: {mask_sensitive_in_text(url)}")
             
             response = self.session.get(url, timeout=10)
             response.raise_for_status()

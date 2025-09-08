@@ -9,6 +9,7 @@ from config import ConfigManager
 from handlers.import_url import get_library_data, search_video_by_keyword
 from utils.tmdb_api import get_tmdb_media_details, search_tv_series_by_name_year, validate_tv_series_match
 from utils.api import call_danmaku_api
+from utils.security import mask_sensitive_data
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +33,7 @@ class WebhookHandler:
             return False
             
         if provided_key != self.config.webhook.api_key:
-            logger.warning(f"🔒 API密钥验证失败: {provided_key[:8]}...")
+            logger.warning(f"🔒 API密钥验证失败: {mask_sensitive_data(provided_key)}")
             return False
             
         return True

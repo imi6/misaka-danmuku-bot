@@ -2,6 +2,7 @@ import logging
 import requests
 from typing import Dict, Optional, Any
 from config import ConfigManager
+from utils.security import mask_sensitive_in_text
 
 # 初始化日志
 logger = logging.getLogger(__name__)
@@ -42,16 +43,16 @@ def call_danmaku_api(
         return {"success": True, "data": response.json()}
 
     except requests.exceptions.Timeout:
-        logger.error(f"⏱️ API请求超时：{full_url}")
+        logger.error(f"⏱️ API请求超时：{mask_sensitive_in_text(full_url)}")
         return {"success": False, "error": "请求超时，请稍后重试"}
     except requests.exceptions.ConnectionError:
-        logger.error(f"🔌 API连接失败：{full_url}")
+        logger.error(f"🔌 API连接失败：{mask_sensitive_in_text(full_url)}")
         return {"success": False, "error": "API连接失败，请检查地址是否正确"}
     except requests.exceptions.HTTPError as e:
         error_msg = f"HTTP错误 {e.response.status_code}：{e.response.text[:100]}"
-        logger.error(f"❌ API请求错误：{full_url}，{error_msg}")
+        logger.error(f"❌ API请求错误：{mask_sensitive_in_text(full_url)}，{error_msg}")
         return {"success": False, "error": error_msg}
     except Exception as e:
         error_msg = f"未知错误：{str(e)[:50]}"
-        logger.error(f"❌ API请求异常：{full_url}，{error_msg}")
+        logger.error(f"❌ API请求异常：{mask_sensitive_in_text(full_url)}，{error_msg}")
         return {"success": False, "error": error_msg}

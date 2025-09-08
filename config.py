@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass, field
 from dotenv import load_dotenv
+from utils.security import mask_sensitive_data
 
 # 加载.env文件中的环境变量
 load_dotenv()
@@ -20,6 +21,9 @@ logging.basicConfig(
         logging.StreamHandler()
     ]
 )
+
+# 设置第三方库的日志级别为 WARNING，减少敏感信息泄露
+logging.getLogger('urllib3').setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 
@@ -111,7 +115,7 @@ class TMDBConfig:
             else:
                 self.base_url = f"{self.proxy_url}/3"
             if not ConfigManager._initialization_logged:
-                logger.info(f"ℹ️ 使用TMDB代理: {self.base_url}")
+                logger.info(f"ℹ️ 使用TMDB代理: {mask_sensitive_data(self.base_url)}")
         
         if not self.api_key or not self.api_key.strip():
             if not ConfigManager._initialization_logged:

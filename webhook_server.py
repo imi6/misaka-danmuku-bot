@@ -4,6 +4,7 @@ from aiohttp import web, ClientSession
 from typing import Optional
 from handlers.webhook import webhook_handler
 from config import config
+from utils.security import mask_sensitive_data
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +34,7 @@ class WebhookServer:
             # 验证API密钥
             api_key = request.query.get('api_key')
             if not api_key or api_key != config.webhook.api_key:
-                logger.warning(f"Invalid API key in webhook request: {api_key}")
+                logger.warning(f"Invalid API key in webhook request: {mask_sensitive_data(api_key) if api_key else 'None'}")
                 return web.Response(status=401, text="Unauthorized")
             
             # 获取请求体
@@ -75,7 +76,7 @@ class WebhookServer:
             await self.site.start()
             
             logger.info(f"🔌 Webhook server started on http://127.0.0.1:{config.webhook.port}")
-            logger.info(f"🔗 Emby webhook URL: http://127.0.0.1:{config.webhook.port}/api/webhook/emby?api_key={config.webhook.api_key}")
+            logger.info(f"🔗 Emby webhook URL: http://127.0.0.1:{config.webhook.port}/api/webhook/emby?api_key={mask_sensitive_data(config.webhook.api_key)}")
             
         except Exception as e:
             logger.error(f"❌ Failed to start webhook server: {e}", exc_info=True)
