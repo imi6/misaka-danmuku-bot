@@ -29,7 +29,7 @@ def extract_show_title_from_h1(soup) -> str:
                 # 过滤掉过短或明显不是标题的内容
                 if len(title) >= 2 and not title.isdigit():
                     # 清理标题，移除首尾的标点符号
-                    title = re.sub(r'^[\s\-_：:（）()【】\[\]《》<>""''.,!！？?]+|[\s\-_：:（）()【】\[\]《》<>""''.,!！？?]+$', '', title)
+                    title = re.sub(r'^[ \t\n\r\f\v_：:（）()【】\\[\\]《》<>""''.,!！？?-]+|[ \t\n\r\f\v_：:（）()【】\\[\\]《》<>""''.,!！？?-]+$', '', title)
                     if title:
                         return title
     
