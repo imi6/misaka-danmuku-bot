@@ -241,11 +241,8 @@ def search_tv_series_by_name_year(series_name: str, year: Optional[str] = None, 
             'page': 1
         }
         
-        # 如果提供了年份，添加到搜索参数中
-        if year:
-            params['first_air_date_year'] = year
-        
-        logger.info(f"🔍 通过TMDB搜索电视剧: {series_name}" + (f" ({year})" if year else ""))
+        # 不使用年份参数，因为TMDB以第一季发布时间为准，多季剧集可能相差数年
+        logger.info(f"🔍 通过TMDB搜索电视剧: {series_name} (忽略年份参数)")
         response = requests.get(url, params=params, timeout=10)
         response.raise_for_status()
         
@@ -256,54 +253,49 @@ def search_tv_series_by_name_year(series_name: str, year: Optional[str] = None, 
             logger.info(f"❌ TMDB未找到匹配的电视剧: {series_name}")
             return None
         
-        # 寻找最佳匹配
+        # 寻找最佳匹配，优先完全匹配的名称
         best_match = None
-        best_score = 0
+        exact_match = None
         
         for result in results:
-            score = 0
             result_name = result.get('name', '')
             result_original_name = result.get('original_name', '')
             result_first_air_date = result.get('first_air_date', '')
             result_year = result_first_air_date[:4] if result_first_air_date else ''
             
-            # 名称匹配评分
-            if series_name.lower() in result_name.lower() or result_name.lower() in series_name.lower():
-                score += 50
-            if series_name.lower() in result_original_name.lower() or result_original_name.lower() in series_name.lower():
-                score += 30
+            # 检查是否为完全匹配
+            if (series_name.lower() == result_name.lower() or 
+                series_name.lower() == result_original_name.lower()):
+                exact_match = result
+                logger.info(f"✅ 找到完全匹配: {result_name} ({result_year})")
+                break
             
-            # 年份匹配评分
-            if year and result_year == year:
-                score += 40
-            elif year and result_year and abs(int(year) - int(result_year)) <= 1:
-                score += 20  # 允许1年误差
-            
-            # 受欢迎度加分
-            popularity = result.get('popularity', 0)
-            score += min(popularity / 10, 10)  # 最多加10分
-            
-            logger.debug(f"📊 匹配评分: {result_name} ({result_year}) - {score}分")
-            
-            if score > best_score:
-                best_score = score
+            # 如果没有完全匹配，选择第一个包含匹配的结果作为备选
+            if not best_match and (
+                series_name.lower() in result_name.lower() or result_name.lower() in series_name.lower() or
+                series_name.lower() in result_original_name.lower() or result_original_name.lower() in series_name.lower()
+            ):
                 best_match = result
+                logger.debug(f"📊 备选匹配: {result_name} ({result_year})")
         
-        if not best_match or best_score < 30:  # 设置最低匹配分数阈值
-            logger.info(f"❌ TMDB未找到足够匹配的电视剧: {series_name} (最高分数: {best_score})")
+        # 优先使用完全匹配，否则使用备选匹配
+        final_match = exact_match or best_match
+        
+        if not final_match:
+            logger.info(f"❌ TMDB未找到匹配的电视剧: {series_name}")
             return None
         
         # 格式化返回结果
-        tmdb_id = str(best_match.get('id', ''))
+        tmdb_id = str(final_match.get('id', ''))
         result_info = {
             'tmdb_id': tmdb_id,
-            'name': best_match.get('name', ''),
-            'original_name': best_match.get('original_name', ''),
-            'first_air_date': best_match.get('first_air_date', ''),
-            'year': best_match.get('first_air_date', '')[:4] if best_match.get('first_air_date') else '',
-            'overview': best_match.get('overview', ''),
-            'vote_average': best_match.get('vote_average', 0),
-            'popularity': best_match.get('popularity', 0)
+            'name': final_match.get('name', ''),
+            'original_name': final_match.get('original_name', ''),
+            'first_air_date': final_match.get('first_air_date', ''),
+            'year': final_match.get('first_air_date', '')[:4] if final_match.get('first_air_date') else '',
+            'overview': final_match.get('overview', ''),
+            'vote_average': final_match.get('vote_average', 0),
+            'popularity': final_match.get('popularity', 0)
         }
         
         # 获取详细信息以获取季数和集数
@@ -312,7 +304,8 @@ def search_tv_series_by_name_year(series_name: str, year: Optional[str] = None, 
             result_info['number_of_seasons'] = detailed_info.get('number_of_seasons', 0)
             result_info['number_of_episodes'] = detailed_info.get('number_of_episodes', 0)
         
-        logger.info(f"✅ TMDB找到匹配的电视剧: {result_info['name']} ({result_info['year']}) - ID: {tmdb_id} (匹配分数: {best_score})")
+        match_type = "完全匹配" if exact_match else "部分匹配"
+        logger.info(f"✅ TMDB找到匹配的电视剧: {result_info['name']} ({result_info['year']}) - ID: {tmdb_id} ({match_type})")
         return result_info
         
     except requests.exceptions.RequestException as e:
