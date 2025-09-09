@@ -288,35 +288,44 @@ class WebhookHandler:
             media_info: 媒体信息
         """
         try:
-            tmdb_id = media_info.get('tmdb_id')
             media_type = media_info.get('type', '')
             title = media_info.get('title')
             
+            # 获取优先级Provider信息
+            provider_type, provider_id, search_type = self._get_priority_provider_info(media_info)
+            
             # 详细检查缺失的信息
             missing_info = []
-            if not tmdb_id:
-                missing_info.append('TMDB ID')
+            if not provider_id:
+                missing_info.append('Provider ID')
             if not title:
                 missing_info.append('标题')
             
-            # 对于电视剧，如果缺少TMDB ID但有剧集名称，尝试通过名称搜索
-            if not tmdb_id and media_type == 'Episode':
+            # 对于电视剧，如果缺少Provider ID但有剧集名称，尝试通过名称搜索TMDB ID
+            if not provider_id and media_type == 'Episode':
                 series_name = media_info.get('series_name')
                 year = media_info.get('year')
                 if series_name:
-                    logger.info(f"🔍 电视剧缺少TMDB ID，尝试通过剧集名称搜索: {series_name} ({year})")
+                    logger.info(f"🔍 电视剧缺少Provider ID，尝试通过剧集名称搜索TMDB ID: {series_name} ({year})")
                     # 这里可以调用TMDB搜索API来获取TMDB ID
                     # 暂时先记录日志，后续可以扩展搜索功能
                     logger.debug(f"📺 剧集信息: 名称='{series_name}', 年份='{year}', 季数='{media_info.get('season')}', 集数='{media_info.get('episode')}'")
             
             # 如果仍然缺少关键信息，跳过智能管理
-            if not tmdb_id and not title:
+            if not provider_id and not title:
                 logger.info(f"ℹ️ 媒体缺少必要信息（{', '.join(missing_info)}），跳过智能管理")
-                logger.debug(f"🔍 媒体信息详情: TMDB ID='{tmdb_id}', 标题='{title}', 类型='{media_type}'")
+                logger.debug(f"🔍 媒体信息详情: Provider='{provider_type}:{provider_id}', 标题='{title}', 类型='{media_type}'")
                 return
-            elif not tmdb_id:
-                logger.info(f"⚠️ 媒体缺少TMDB ID但有标题信息，继续处理: {title}")
-                logger.debug(f"🔍 媒体信息详情: TMDB ID='{tmdb_id}', 标题='{title}', 类型='{media_type}'")
+            elif not provider_id:
+                logger.info(f"⚠️ 媒体缺少Provider ID但有标题信息，继续处理: {title}")
+                logger.debug(f"🔍 媒体信息详情: Provider='{provider_type}:{provider_id}', 标题='{title}', 类型='{media_type}'")
+            else:
+                logger.info(f"✅ 使用优先级Provider: {provider_type.upper()} ID={provider_id}")
+            
+            # 更新media_info中的Provider信息
+            media_info['selected_provider_type'] = provider_type
+            media_info['selected_provider_id'] = provider_id
+            media_info['selected_search_type'] = search_type
             
             # 根据媒体类型选择处理方式
             if media_type == 'Movie':
@@ -336,11 +345,14 @@ class WebhookHandler:
             media_info: 电影媒体信息
         """
         try:
-            tmdb_id = media_info.get('tmdb_id')
+            # 获取优先级 provider 信息
+            provider_id = media_info.get('selected_provider_id')
+            provider_type = media_info.get('selected_provider_type', 'tmdb')
+            
             movie_title = media_info.get('original_title') or media_info.get('title')
             year = media_info.get('year', '')
             
-            logger.info(f"🎬 开始电影智能管理: {movie_title} ({year}) (TMDB: {tmdb_id})")
+            logger.info(f"🎬 开始电影智能管理: {movie_title} ({year}) ({provider_type.upper()}: {provider_id})")
             
             # 1. 检查缓存库中的电影，使用电影名称进行匹配
             library_data = await get_library_data()
@@ -355,9 +367,12 @@ class WebhookHandler:
                            if match.get('title', '').lower() == movie_title.lower()]
             
             if not exact_matches:
-                # 未找到精确匹配：使用TMDB ID自动导入电影
-                logger.info(f"📥 未找到匹配的电影，开始自动导入: {movie_title} ({year})")
-                await self._import_movie(tmdb_id)
+                # 未找到精确匹配：使用优先级 provider ID 自动导入电影
+                if provider_id:
+                    logger.info(f"📥 未找到匹配的电影，开始自动导入: {movie_title} ({year}) 使用 {provider_type.upper()} ID")
+                    await self._import_movie_by_provider(provider_id, provider_type)
+                else:
+                    logger.warning(f"⚠️ 无法导入电影，缺少有效的 provider ID: {movie_title}")
             else:
                 # 存在匹配项：使用refresh功能更新电影数据
                 selected_match = exact_matches[0]
@@ -392,7 +407,10 @@ class WebhookHandler:
             media_info: 电视剧媒体信息
         """
         try:
-            tmdb_id = media_info.get('tmdb_id')
+            # 获取优先级 provider 信息
+            provider_id = media_info.get('selected_provider_id')
+            provider_type = media_info.get('selected_provider_type', 'tmdb')
+            
             series_name = media_info.get('series_name') or media_info.get('title')
             season = media_info.get('season')
             episode = media_info.get('episode')
@@ -411,7 +429,7 @@ class WebhookHandler:
                 season = 0
                 episode = 0
             
-            logger.info(f"🤖 开始电视剧智能管理: {series_name} {'S' + str(season).zfill(2) if season else ''}{('E' + str(episode).zfill(2)) if episode else ''} (TMDB: {tmdb_id})")
+            logger.info(f"🤖 开始电视剧智能管理: {series_name} {'S' + str(season).zfill(2) if season else ''}{('E' + str(episode).zfill(2)) if episode else ''} ({provider_type.upper()}: {provider_id})")
             
             # 1. 检查缓存库中的影视库，使用series_name和季度进行匹配
             library_data = await get_library_data()
@@ -496,7 +514,7 @@ class WebhookHandler:
                 not season_matches or 
                 (season and not exact_season_match) or 
                 not episode
-            ) and not tmdb_id
+            ) and not provider_id
             
             if should_search_tmdb:
                 logger.info(f"🔍 触发TMDB搜索原因: 无匹配项={not season_matches}, 季度不匹配={season and not exact_season_match}, 无集数={not episode}")
@@ -525,7 +543,7 @@ class WebhookHandler:
                         found_tmdb_id = tmdb_search_result.get('tmdb_id')
                         logger.info(f"✅ TMDB搜索匹配成功: {tmdb_search_result.get('name')} - 匹配分数: {match_score}")
                         logger.info(f"📥 开始自动导入: {series_name} S{season} (TMDB: {found_tmdb_id})")
-                        await self._import_episodes(found_tmdb_id, season, [episode, episode + 1] if episode else None)
+                        await self._import_episodes_by_provider(found_tmdb_id, 'tmdb', season, [episode, episode + 1] if episode else None)
                         return True
                     else:
                         logger.info(f"❌ TMDB搜索结果匹配度不足: {tmdb_search_result.get('name')} - 匹配分数: {match_score}")
@@ -559,13 +577,13 @@ class WebhookHandler:
                         break
             
             if not final_matches:
-                # 未找到匹配项：检查是否有TMDB ID进行自动导入
-                if tmdb_id:
-                    logger.info(f"📥 未找到匹配项，开始自动导入: {series_name} S{season} (TMDB: {tmdb_id})")
-                    await self._import_episodes(tmdb_id, season, [episode, episode + 1] if episode else None)
+                # 未找到匹配项：检查是否有 provider ID 进行自动导入
+                if provider_id:
+                    logger.info(f"📥 未找到匹配项，开始自动导入: {series_name} S{season} ({provider_type.upper()}: {provider_id})")
+                    await self._import_episodes_by_provider(provider_id, provider_type, season, [episode, episode + 1] if episode else None)
                 else:
                     # 尝试通过TMDB API搜索获取TMDB ID
-                    logger.info(f"🔍 未找到匹配项且缺少TMDB ID，尝试通过TMDB搜索: {series_name} ({year})")
+                    logger.info(f"🔍 未找到匹配项且缺少 provider ID，尝试通过TMDB搜索: {series_name} ({year})")
                     tmdb_search_result = search_tv_series_by_name_year(series_name, year)
                     
                     if tmdb_search_result:
@@ -574,7 +592,7 @@ class WebhookHandler:
                             found_tmdb_id = tmdb_search_result.get('tmdb_id')
                             logger.info(f"✅ TMDB搜索成功，找到匹配的剧集: {tmdb_search_result.get('name')} (ID: {found_tmdb_id})")
                             logger.info(f"📥 开始自动导入: {series_name} S{season} (TMDB: {found_tmdb_id})")
-                            await self._import_episodes(found_tmdb_id, season, [episode, episode + 1] if episode else None)
+                            await self._import_episodes_by_provider(found_tmdb_id, 'tmdb', season, [episode, episode + 1] if episode else None)
                         else:
                             logger.warning(f"⚠️ TMDB搜索结果验证失败: {series_name}")
                             logger.debug(f"💡 建议: 请检查剧集名称和年份是否正确，或在Emby中添加正确的TMDB刮削信息")
@@ -695,31 +713,40 @@ class WebhookHandler:
         
         return None
     
-    async def _import_movie(self, tmdb_id: str):
-        """导入单个电影
+    async def _import_movie_by_provider(self, provider_id: str, provider_type: str = 'tmdb'):
+        """使用优先级 provider 导入单个电影
         
         Args:
-            tmdb_id: TMDB电影ID
+            provider_id: Provider ID (tmdb_id, tvdb_id, 或 imdb_id)
+            provider_type: Provider 类型 ('tmdb', 'tvdb', 'imdb')
         """
         try:
-            logger.info(f"📥 开始导入电影 (TMDB: {tmdb_id})")
+            logger.info(f"📥 开始导入电影 ({provider_type.upper()}: {provider_id})")
             
             # 调用导入API
             import_params = {
-                "searchType": "tmdb",
-                "searchTerm": tmdb_id
+                "searchType": provider_type,
+                "searchTerm": provider_id
             }
             
             response = call_danmaku_api('POST', '/import/auto', params=import_params)
             
             if response and response.get('success'):
-                logger.info(f"✅ 电影导入成功 (TMDB: {tmdb_id})")
+                logger.info(f"✅ 电影导入成功 ({provider_type.upper()}: {provider_id})")
             else:
                 error_msg = response.get('message', '未知错误') if response else '请求失败'
-                logger.error(f"❌ 电影导入失败 (TMDB: {tmdb_id}): {error_msg}")
+                logger.error(f"❌ 电影导入失败 ({provider_type.upper()}: {provider_id}): {error_msg}")
                 
         except Exception as e:
-            logger.error(f"❌ 导入电影时发生错误 (TMDB: {tmdb_id}): {e}", exc_info=True)
+            logger.error(f"❌ 导入电影时发生错误 ({provider_type.upper()}: {provider_id}): {e}", exc_info=True)
+    
+    async def _import_movie(self, tmdb_id: str):
+        """导入单个电影 (兼容性方法)
+        
+        Args:
+            tmdb_id: TMDB电影ID
+        """
+        await self._import_movie_by_provider(tmdb_id, 'tmdb')
     
     async def _refresh_movie(self, source_id: str):
         """刷新电影数据
@@ -786,42 +813,56 @@ class WebhookHandler:
         except Exception as e:
             logger.error(f"❌ 刷新电影时发生错误 (源ID: {source_id}): {e}", exc_info=True)
     
-    async def _import_episodes(self, tmdb_id: str, season: int, episodes: list):
-        """导入指定集数
+    async def _import_episodes_by_provider(self, provider_id: str, provider_type: str, season: int, episodes: list):
+        """根据provider类型导入指定集数
         
         Args:
-            tmdb_id: TMDB ID
+            provider_id: Provider ID (TMDB/TVDB/IMDB)
+            provider_type: Provider类型 ('tmdb', 'tvdb', 'imdb')
             season: 季度
             episodes: 集数列表
         """
         if not episodes:
-            logger.warning(f"⚠️ 集数列表为空，跳过导入: TMDB {tmdb_id} S{season}")
+            logger.warning(f"⚠️ 集数列表为空，跳过导入: {provider_type.upper()} {provider_id} S{season}")
             return
         
-        # 获取TMDB详细信息进行验证
+        # 根据provider类型设置搜索参数
+        search_type_map = {
+            'tmdb': 'tmdb',
+            'tvdb': 'tvdb', 
+            'imdb': 'imdb'
+        }
+        
+        search_type = search_type_map.get(provider_type.lower(), 'tmdb')
+        
+        # 获取详细信息进行验证（仅TMDB支持）
+        max_episodes = 0
         try:
-            tmdb_info = get_tmdb_media_details(tmdb_id, 'tv_series')
-            if tmdb_info:
-                logger.info(f"📺 准备导入剧集: {tmdb_info.get('name', 'Unknown')} ({tmdb_info.get('year', 'N/A')})")
-                
-                # 验证季度有效性
-                seasons = tmdb_info.get('seasons', [])
-                valid_season = None
-                for s in seasons:
-                    if s.get('season_number') == season:
-                        valid_season = s
-                        break
-                
-                if not valid_season:
-                    logger.error(f"❌ 无效的季度: S{season}，可用季度: {[s.get('season_number') for s in seasons]}")
-                    return
-                
-                max_episodes = valid_season.get('episode_count', 0)
-                logger.info(f"📊 季度信息: S{season} 共{max_episodes}集")
+            if provider_type.lower() == 'tmdb':
+                tmdb_info = get_tmdb_media_details(provider_id, 'tv_series')
+                if tmdb_info:
+                    logger.info(f"📺 准备导入剧集: {tmdb_info.get('name', 'Unknown')} ({tmdb_info.get('year', 'N/A')})")
+                    
+                    # 验证季度有效性
+                    seasons = tmdb_info.get('seasons', [])
+                    valid_season = None
+                    for s in seasons:
+                        if s.get('season_number') == season:
+                            valid_season = s
+                            break
+                    
+                    if not valid_season:
+                        logger.error(f"❌ 无效的季度: S{season}，可用季度: {[s.get('season_number') for s in seasons]}")
+                        return
+                    
+                    max_episodes = valid_season.get('episode_count', 0)
+                    logger.info(f"📊 季度信息: S{season} 共{max_episodes}集")
+                else:
+                    logger.warning(f"⚠️ 无法获取TMDB详细信息: {provider_id}，继续尝试导入")
             else:
-                logger.warning(f"⚠️ 无法获取TMDB详细信息: {tmdb_id}，继续尝试导入")
+                logger.info(f"📺 准备导入剧集: {provider_type.upper()} {provider_id} S{season}")
         except Exception as e:
-            logger.warning(f"⚠️ 验证TMDB信息时出错: {e}，继续尝试导入")
+            logger.warning(f"⚠️ 验证{provider_type.upper()}信息时出错: {e}，继续尝试导入")
         
         success_count = 0
         failed_count = 0
@@ -841,21 +882,21 @@ class WebhookHandler:
                     logger.warning(f"⚠️ 跳过无效集数格式: {episode}")
                     continue
                 
-                # 验证集数是否超出范围
-                if 'max_episodes' in locals() and max_episodes > 0 and episode_num > max_episodes:
+                # 验证集数是否超出范围（仅TMDB支持）
+                if provider_type.lower() == 'tmdb' and max_episodes > 0 and episode_num > max_episodes:
                     logger.warning(f"⚠️ 集数超出范围: S{season}E{episode_num} > {max_episodes}集，跳过")
                     continue
                 
                 # 构建导入参数
                 import_params = {
-                    "searchType": "tmdb",
-                    "searchTerm": tmdb_id,
+                    "searchType": search_type,
+                    "searchTerm": provider_id,
                     "mediaType": "tv_series",
                     "season": season,
                     "episode": episode_num
                 }
                 
-                logger.info(f"🚀 开始导入: TMDB {tmdb_id} S{season:02d}E{episode_num:02d}")
+                logger.info(f"🚀 开始导入: {provider_type.upper()} {provider_id} S{season:02d}E{episode_num:02d}")
                 
                 # 调用导入API
                 try:
@@ -887,10 +928,45 @@ class WebhookHandler:
         except Exception as e:
             logger.error(f"❌ 导入集数异常: {e}", exc_info=True)
     
+    async def _import_episodes(self, tmdb_id: str, season: int, episodes: list):
+        """导入指定集数（兼容性方法）
+        
+        Args:
+            tmdb_id: TMDB ID
+            season: 季度
+            episodes: 集数列表
+        """
+        await self._import_episodes_by_provider(tmdb_id, 'tmdb', season, episodes)
+    
 
     
 
      
+    def _get_priority_provider_info(self, media_info: Dict[str, Any]) -> tuple:
+        """
+        获取优先级Provider信息 (tmdb > tvdb > imdb)
+        
+        Args:
+            media_info: 已提取的媒体信息（包含provider ID）
+            
+        Returns:
+            tuple: (provider_type, provider_id, search_type)
+        """
+        # 按优先级检查：tmdb > tvdb > imdb
+        tmdb_id = media_info.get('tmdb_id')
+        if tmdb_id:
+            return 'tmdb', tmdb_id, 'tmdb'
+            
+        tvdb_id = media_info.get('tvdb_id')
+        if tvdb_id:
+            return 'tvdb', tvdb_id, 'tvdb'
+            
+        imdb_id = media_info.get('imdb_id')
+        if imdb_id:
+            return 'imdb', imdb_id, 'imdb'
+            
+        return None, None, None
+    
     async def _refresh_episodes(self, source_id: str, episodes: list, tmdb_id: Optional[str], season_num: int, series_name: Optional[str] = None, year: Optional[str] = None):
         """刷新指定集数
         
