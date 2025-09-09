@@ -206,6 +206,126 @@ def format_tmdb_results_info(query: str) -> str:
     return "\n".join(info_parts)
 
 
+def search_movie_by_name_year(movie_name: str, year: Optional[str] = None, language: str = 'zh-CN') -> Optional[Dict[str, Any]]:
+    """通过电影名称和年份搜索电影，返回最佳匹配的TMDB ID和详细信息
+    
+    Args:
+        movie_name: 电影名称
+        year: 年份（可选）
+        language: 语言代码，默认中文
+        
+    Returns:
+        包含TMDB ID和详细信息的字典，如果未找到匹配返回None
+        返回格式: {
+            'tmdb_id': str,
+            'title': str,
+            'original_title': str,
+            'release_date': str,
+            'year': str,
+            'overview': str,
+            'vote_average': float,
+            'runtime': int
+        }
+    """
+    if not TMDB_ENABLED:
+        logger.debug("TMDB API未启用，跳过电影搜索")
+        return None
+    
+    try:
+        url = f"{TMDB_BASE_URL}/search/movie"
+        params = {
+            'api_key': TMDB_API_KEY,
+            'query': movie_name,
+            'language': language,
+            'page': 1
+        }
+        
+        # 如果提供了年份，添加年份参数提高匹配精度
+        if year:
+            params['year'] = year
+            logger.info(f"🔍 通过TMDB搜索电影: {movie_name} ({year})")
+        else:
+            logger.info(f"🔍 通过TMDB搜索电影: {movie_name} (年份未知)")
+            
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        
+        data = response.json()
+        results = data.get('results', [])
+        
+        if not results:
+            logger.info(f"❌ TMDB未找到匹配的电影: {movie_name}")
+            return None
+        
+        # 寻找最佳匹配，优先完全匹配的名称
+        best_match = None
+        exact_match = None
+        
+        for result in results:
+            result_title = result.get('title', '')
+            result_original_title = result.get('original_title', '')
+            result_release_date = result.get('release_date', '')
+            result_year = result_release_date[:4] if result_release_date else ''
+            
+            # 检查是否为完全匹配
+            if (movie_name.lower() == result_title.lower() or 
+                movie_name.lower() == result_original_title.lower()):
+                # 如果提供了年份，进一步验证年份匹配
+                if year and result_year and abs(int(year) - int(result_year)) <= 1:
+                    exact_match = result
+                    logger.info(f"✅ 找到完全匹配（含年份）: {result_title} ({result_year})")
+                    break
+                elif not year:
+                    exact_match = result
+                    logger.info(f"✅ 找到完全匹配: {result_title} ({result_year})")
+                    break
+            
+            # 如果没有完全匹配，选择第一个包含匹配的结果作为备选
+            if not best_match and (
+                movie_name.lower() in result_title.lower() or result_title.lower() in movie_name.lower() or
+                movie_name.lower() in result_original_title.lower() or result_original_title.lower() in movie_name.lower()
+            ):
+                best_match = result
+                logger.debug(f"📊 备选匹配: {result_title} ({result_year})")
+        
+        # 优先使用完全匹配，否则使用备选匹配
+        final_match = exact_match or best_match
+        
+        if not final_match:
+            logger.info(f"❌ TMDB未找到匹配的电影: {movie_name}")
+            return None
+        
+        # 格式化返回结果
+        tmdb_id = str(final_match.get('id', ''))
+        result_info = {
+            'tmdb_id': tmdb_id,
+            'title': final_match.get('title', ''),
+            'original_title': final_match.get('original_title', ''),
+            'release_date': final_match.get('release_date', ''),
+            'year': final_match.get('release_date', '')[:4] if final_match.get('release_date') else '',
+            'overview': final_match.get('overview', ''),
+            'vote_average': final_match.get('vote_average', 0),
+            'popularity': final_match.get('popularity', 0)
+        }
+        
+        # 获取详细信息以获取运行时间等额外信息
+        detailed_info = get_tmdb_media_details(tmdb_id, 'movie', language)
+        if detailed_info:
+            result_info['runtime'] = detailed_info.get('runtime', 0)
+            result_info['genres'] = detailed_info.get('genres', [])
+        
+        match_type = "完全匹配" if exact_match else "部分匹配"
+        logger.info(f"✅ TMDB找到匹配的电影: {result_info['title']} ({result_info['year']}) - ID: {tmdb_id} ({match_type})")
+        return result_info
+        
+    except requests.exceptions.RequestException as e:
+        logger.error(f"❌ TMDB电影搜索API请求失败: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"❌ TMDB电影搜索处理失败: {e}")
+        return None
+
+
 def search_tv_series_by_name_year(series_name: str, year: Optional[str] = None, language: str = 'zh-CN') -> Optional[Dict[str, Any]]:
     """通过剧集名称和年份搜索电视剧，返回最佳匹配的TMDB ID和详细信息
     

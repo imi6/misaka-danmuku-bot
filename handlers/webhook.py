@@ -392,22 +392,32 @@ class WebhookHandler:
                 
                 # 获取源列表进行刷新
                 anime_id = selected_match.get('animeId')
+                refresh_success = False
                 if anime_id:
-                    sources_response = call_danmaku_api('GET', f'/library/anime/{anime_id}/sources')
-                    if sources_response and sources_response.get('success'):
-                        sources = sources_response.get('data', [])
-                        if sources:
-                            source_id = sources[0].get('sourceId')
-                            if source_id:
-                                await self._refresh_movie(source_id)
+                    try:
+                        sources_response = call_danmaku_api('GET', f'/library/anime/{anime_id}/sources')
+                        if sources_response and sources_response.get('success'):
+                            sources = sources_response.get('data', [])
+                            if sources:
+                                source_id = sources[0].get('sourceId')
+                                if source_id:
+                                    await self._refresh_movie(source_id)
+                                    refresh_success = True
+                                else:
+                                    logger.error(f"❌ 无法获取源ID: {selected_match.get('title')}")
                             else:
-                                logger.error(f"❌ 无法获取源ID: {selected_match.get('title')}")
+                                logger.warning(f"⚠️ 未找到可用源: {selected_match.get('title')}")
                         else:
-                            logger.warning(f"⚠️ 未找到可用源: {selected_match.get('title')}")
-                    else:
-                        logger.error(f"❌ 获取源列表失败: {selected_match.get('title')}")
+                            logger.error(f"❌ 获取源列表失败: {selected_match.get('title')}")
+                    except Exception as e:
+                        logger.warning(f"⚠️ 刷新电影时发生错误，可能资源已被删除: {e}")
+                        logger.info(f"💡 由于资源库缓存，将继续执行TMDB智能识别")
                 else:
                     logger.error(f"❌ 无法获取动漫ID: {selected_match.get('title')}")
+                
+                # 如果刷新失败，继续执行TMDB智能识别和导入
+                if not refresh_success:
+                    await self._fallback_tmdb_search_and_import(movie_title, year, media_type='movie')
                     
         except Exception as e:
             logger.error(f"❌ 电影智能管理处理失败: {e}", exc_info=True)
@@ -618,26 +628,184 @@ class WebhookHandler:
                 
                 # 获取源列表进行刷新
                 anime_id = selected_match.get('animeId')
+                refresh_success = False
                 if anime_id:
-                    sources_response = call_danmaku_api('GET', f'/library/anime/{anime_id}/sources')
-                    if sources_response and sources_response.get('success'):
-                        sources = sources_response.get('data', [])
-                        if sources:
-                            source_id = sources[0].get('sourceId')
-                            if source_id:
-                                # 传递剧集名称和年份，用于TMDB搜索
-                                await self._refresh_episodes(source_id, [episode, episode + 1], provider_id, season, series_name, year)
+                    try:
+                        sources_response = call_danmaku_api('GET', f'/library/anime/{anime_id}/sources')
+                        if sources_response and sources_response.get('success'):
+                            sources = sources_response.get('data', [])
+                            if sources:
+                                source_id = sources[0].get('sourceId')
+                                if source_id:
+                                    # 传递剧集名称和年份，用于TMDB搜索
+                                    await self._refresh_episodes(source_id, [episode, episode + 1], provider_id, season, series_name, year)
+                                    refresh_success = True
+                                else:
+                                    logger.error(f"❌ 无法获取源ID: {selected_match.get('title')}")
                             else:
-                                logger.error(f"❌ 无法获取源ID: {selected_match.get('title')}")
+                                logger.warning(f"⚠️ 未找到可用源: {selected_match.get('title')}")
                         else:
-                            logger.warning(f"⚠️ 未找到可用源: {selected_match.get('title')}")
-                    else:
-                        logger.error(f"❌ 获取源列表失败: {selected_match.get('title')}")
+                            logger.error(f"❌ 获取源列表失败: {selected_match.get('title')}")
+                    except Exception as e:
+                        logger.warning(f"⚠️ 刷新剧集时发生错误，可能资源已被删除: {e}")
+                        logger.info(f"💡 由于资源库缓存，将继续执行TMDB智能识别")
                 else:
-                    logger.error(f"❌ 无法获取动漫ID: {selected_match.get('title')}")
+                    logger.error(f"❌ 无法获取资源ID: {selected_match.get('title')}")
+                
+                # 如果刷新失败，继续执行TMDB智能识别
+                if not refresh_success:
+                    await self._fallback_tmdb_search_and_import(series_name, year, season, episode, 'tv')
                     
         except Exception as e:
             logger.error(f"❌ 电视剧智能管理处理失败: {e}", exc_info=True)
+    
+    async def _fallback_tmdb_search_and_import(self, title: str, year: str = None, season: int = None, episode: int = None, 
+                                             media_type: str = 'tv'):
+        """TMDB辅助查询和导入的通用方法
+        
+        Args:
+            title: 媒体标题
+            year: 年份
+            season: 季度（仅电视剧）
+            episode: 集数（仅电视剧）
+            media_type: 媒体类型 ('tv' 或 'movie')
+        """
+        try:
+            if media_type == 'movie':
+                logger.info(f"🔍 刷新失败，开始TMDB智能识别: {title} ({year})")
+                
+                # 触发TMDB搜索逻辑
+                cached_result = self._get_cached_tmdb_result(title)
+                tmdb_search_result = None
+                
+                if cached_result:
+                    logger.info(f"💾 使用缓存的TMDB结果: {title}")
+                    tmdb_search_result = cached_result
+                else:
+                    logger.info(f"🔍 开始TMDB搜索: {title} ({year if year else '年份未知'})")
+                    from utils.tmdb_api import search_movie_by_name_year
+                    tmdb_search_result = search_movie_by_name_year(title, year)
+                    
+                    if tmdb_search_result:
+                        # 缓存搜索结果
+                        self._cache_tmdb_result(title, tmdb_search_result)
+                
+                if tmdb_search_result:
+                    # 增强的匹配验证
+                    match_score = self._calculate_movie_match_score(tmdb_search_result, title, year)
+                    logger.info(f"📊 TMDB电影匹配评分: {tmdb_search_result.get('title')} ({tmdb_search_result.get('year', 'N/A')}) - {match_score}分")
+                    
+                    if match_score >= 70:  # 设置合理的匹配阈值
+                        found_tmdb_id = tmdb_search_result.get('tmdb_id')
+                        logger.info(f"✅ TMDB电影搜索匹配成功: {tmdb_search_result.get('title')} - 匹配分数: {match_score}")
+                        
+                        # 使用TMDB ID导入电影
+                        await self._import_movie_by_tmdb_id(found_tmdb_id)
+                        return
+                    else:
+                        logger.info(f"⚠️ TMDB电影匹配分数过低({match_score}分)，尝试fallback方案")
+                
+                # TMDB搜索失败或匹配分数过低
+                logger.warning(f"⚠️ TMDB搜索失败，跳过导入: {title}")
+                return
+            
+            if media_type == 'tv':
+                logger.info(f"🔍 刷新失败，开始TMDB智能识别: {title} ({year})")
+                
+                # 触发TMDB搜索逻辑
+                cached_result = self._get_cached_tmdb_result(title)
+                tmdb_search_result = None
+                
+                if cached_result:
+                    logger.info(f"💾 使用缓存的TMDB结果: {title}")
+                    tmdb_search_result = cached_result
+                else:
+                    logger.info(f"🔍 开始TMDB搜索: {title} ({year if year else '年份未知'})")
+                    tmdb_search_result = search_tv_series_by_name_year(title, year)
+                    
+                    if tmdb_search_result:
+                        # 缓存搜索结果
+                        self._cache_tmdb_result(title, tmdb_search_result)
+                
+                if tmdb_search_result:
+                    # 增强的匹配验证
+                    match_score = self._calculate_match_score(tmdb_search_result, title, year, season)
+                    logger.info(f"📊 TMDB匹配评分: {tmdb_search_result.get('name')} ({tmdb_search_result.get('year', 'N/A')}) - {match_score}分")
+                    
+                    if match_score >= 70:  # 设置合理的匹配阈值
+                        found_tmdb_id = tmdb_search_result.get('tmdb_id')
+                        logger.info(f"✅ TMDB搜索匹配成功: {tmdb_search_result.get('name')} - 匹配分数: {match_score}")
+                        logger.info(f"📥 开始自动导入: {title} S{season} (TMDB: {found_tmdb_id})")
+                        await self._import_episodes_by_provider(found_tmdb_id, 'tmdb', season, [episode, episode + 1] if episode else None)
+                    else:
+                        logger.warning(f"⚠️ TMDB搜索结果验证失败: {title}")
+                else:
+                    logger.info(f"ℹ️ TMDB搜索未找到匹配结果: {title} ({year})")
+                    
+        except Exception as e:
+            logger.error(f"❌ TMDB辅助查询处理失败: {e}", exc_info=True)
+    
+    def _calculate_movie_match_score(self, tmdb_result: dict, movie_title: str, year: str = None) -> int:
+        """计算电影TMDB匹配评分
+        
+        Args:
+            tmdb_result: TMDB搜索结果
+            movie_title: 原始电影标题
+            year: 年份（可选）
+            
+        Returns:
+            匹配评分 (0-100)
+        """
+        if not tmdb_result:
+            return 0
+        
+        score = 0
+        tmdb_title = tmdb_result.get('title', '')
+        tmdb_original_title = tmdb_result.get('original_title', '')
+        tmdb_year = tmdb_result.get('year', '')
+        
+        # 标题匹配评分 (最高60分)
+        movie_title_lower = movie_title.lower().strip()
+        tmdb_title_lower = tmdb_title.lower().strip()
+        tmdb_original_title_lower = tmdb_original_title.lower().strip()
+        
+        if movie_title_lower == tmdb_title_lower or movie_title_lower == tmdb_original_title_lower:
+            score += 60  # 完全匹配
+        elif movie_title_lower in tmdb_title_lower or tmdb_title_lower in movie_title_lower:
+            score += 40  # 包含匹配
+        elif movie_title_lower in tmdb_original_title_lower or tmdb_original_title_lower in movie_title_lower:
+            score += 35  # 原标题包含匹配
+        else:
+            # 计算字符串相似度
+            similarity = self._calculate_string_similarity(movie_title_lower, tmdb_title_lower)
+            score += int(similarity * 30)  # 相似度匹配，最高30分
+        
+        # 年份匹配评分 (最高30分)
+        if year and tmdb_year:
+            try:
+                year_diff = abs(int(year) - int(tmdb_year))
+                if year_diff == 0:
+                    score += 30  # 年份完全匹配
+                elif year_diff == 1:
+                    score += 20  # 年份相差1年
+                elif year_diff <= 2:
+                    score += 10  # 年份相差2年内
+                # 年份相差超过2年不加分
+            except (ValueError, TypeError):
+                pass
+        elif not year:
+            score += 15  # 没有年份信息，给予中等分数
+        
+        # 受欢迎度加分 (最高10分)
+        popularity = tmdb_result.get('popularity', 0)
+        if popularity > 50:
+            score += 10
+        elif popularity > 20:
+            score += 5
+        elif popularity > 5:
+            score += 2
+        
+        return min(score, 100)  # 确保不超过100分
     
     def _calculate_match_score(self, tmdb_result: dict, series_name: str, year: Optional[str], season: Optional[int]) -> int:
         """计算TMDB搜索结果的匹配分数
@@ -809,6 +977,32 @@ class WebhookHandler:
             del self._play_event_cache[key]
         
         logger.debug(f"📝 记录播放事件: {media_info.get('title')} (缓存大小: {len(self._play_event_cache)})")
+    
+    async def _import_movie_by_tmdb_id(self, tmdb_id: str):
+        """使用TMDB ID导入电影
+        
+        Args:
+            tmdb_id: TMDB电影ID
+        """
+        try:
+            logger.info(f"📥 开始导入电影 (TMDB: {tmdb_id})")
+            
+            # 调用导入API
+            import_params = {
+                "searchType": "tmdb",
+                "searchTerm": tmdb_id,
+            }
+            
+            response = call_danmaku_api('POST', '/import/auto', params=import_params)
+            
+            if response and response.get('success'):
+                logger.info(f"✅ 电影导入成功 (TMDB: {tmdb_id})")
+            else:
+                error_msg = response.get('message', '未知错误') if response else '请求失败'
+                logger.error(f"❌ 电影导入失败 (TMDB: {tmdb_id}): {error_msg}")
+                
+        except Exception as e:
+            logger.error(f"❌ 导入电影时发生错误 (TMDB: {tmdb_id}): {e}", exc_info=True)
     
     async def _import_movie_by_provider(self, provider_id: str, provider_type: str = 'tmdb'):
         """使用优先级 provider 导入单个电影
