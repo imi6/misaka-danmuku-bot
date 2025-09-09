@@ -1011,6 +1011,14 @@ class WebhookHandler:
             
             if response and response.get('success'):
                 logger.info(f"✅ 电影导入成功 (TMDB: {tmdb_id})")
+                
+                # 导入成功后刷新library缓存
+                try:
+                    from handlers.import_url import refresh_library_cache
+                    await refresh_library_cache()
+                    logger.info("✅ Library缓存已刷新")
+                except Exception as cache_error:
+                    logger.warning(f"⚠️ Library缓存刷新失败: {cache_error}")
             else:
                 error_msg = response.get('message', '未知错误') if response else '请求失败'
                 logger.error(f"❌ 电影导入失败 (TMDB: {tmdb_id}): {error_msg}")
@@ -1038,6 +1046,14 @@ class WebhookHandler:
             
             if response and response.get('success'):
                 logger.info(f"✅ 电影导入成功 ({provider_type.upper()}: {provider_id})")
+                
+                # 导入成功后刷新library缓存
+                try:
+                    from handlers.import_url import refresh_library_cache
+                    await refresh_library_cache()
+                    logger.info("✅ Library缓存已刷新")
+                except Exception as cache_error:
+                    logger.warning(f"⚠️ Library缓存刷新失败: {cache_error}")
             else:
                 error_msg = response.get('message', '未知错误') if response else '请求失败'
                 logger.error(f"❌ 电影导入失败 ({provider_type.upper()}: {provider_id}): {error_msg}")
@@ -1231,6 +1247,15 @@ class WebhookHandler:
                 logger.info(f"📊 导入完成: 成功 {success_count}/{total_episodes} 集")
                 if failed_count > 0:
                     logger.warning(f"⚠️ {failed_count} 集导入失败，请检查日志")
+                
+                # 如果有成功导入的集数，刷新library缓存
+                if success_count > 0:
+                    try:
+                        from handlers.import_url import refresh_library_cache
+                        await refresh_library_cache()
+                        logger.info("✅ Library缓存已刷新")
+                    except Exception as cache_error:
+                        logger.warning(f"⚠️ Library缓存刷新失败: {cache_error}")
                     
         except Exception as e:
             logger.error(f"❌ 导入集数异常: {e}", exc_info=True)
