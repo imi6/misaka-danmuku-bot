@@ -417,7 +417,8 @@ class WebhookHandler:
                 
                 # 如果刷新失败，继续执行TMDB智能识别和导入
                 if not refresh_success:
-                    await self._fallback_tmdb_search_and_import(movie_title, year, media_type='movie')
+                    await self._fallback_tmdb_search_and_import(movie_title, year, media_type='movie', 
+                                                               provider_id=provider_id, provider_type=provider_type)
                     
         except Exception as e:
             logger.error(f"❌ 电影智能管理处理失败: {e}", exc_info=True)
@@ -654,13 +655,14 @@ class WebhookHandler:
                 
                 # 如果刷新失败，继续执行TMDB智能识别
                 if not refresh_success:
-                    await self._fallback_tmdb_search_and_import(series_name, year, season, episode, 'tv')
+                    await self._fallback_tmdb_search_and_import(series_name, year, season, episode, 'tv',
+                                                               provider_id=provider_id, provider_type=provider_type)
                     
         except Exception as e:
             logger.error(f"❌ 电视剧智能管理处理失败: {e}", exc_info=True)
     
     async def _fallback_tmdb_search_and_import(self, title: str, year: str = None, season: int = None, episode: int = None, 
-                                             media_type: str = 'tv'):
+                                             media_type: str = 'tv', provider_id: str = None, provider_type: str = None):
         """TMDB辅助查询和导入的通用方法
         
         Args:
@@ -669,8 +671,20 @@ class WebhookHandler:
             season: 季度（仅电视剧）
             episode: 集数（仅电视剧）
             media_type: 媒体类型 ('tv' 或 'movie')
+            provider_id: 优先级provider ID
+            provider_type: 优先级provider类型
         """
         try:
+            # 优先使用provider信息进行导入
+            if provider_id and provider_type:
+                logger.info(f"📥 使用优先级provider进行导入: {title} ({provider_type.upper()}: {provider_id})")
+                if media_type == 'movie':
+                    await self._import_movie_by_provider(provider_id, provider_type)
+                    return
+                elif media_type == 'tv':
+                    await self._import_episodes_by_provider(provider_id, provider_type)
+                    return
+            
             if media_type == 'movie':
                 logger.info(f"🔍 刷新失败，开始TMDB智能识别: {title} ({year})")
                 
