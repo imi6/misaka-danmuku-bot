@@ -267,6 +267,7 @@ class WebhookConfig:
     port: int = 7769
     api_key: str = ""
     enabled: bool = False
+    play_event_cooldown_hours: int = 1  # 播放事件冷却时间（固定1小时），避免重复处理
     
     def __post_init__(self):
         if not self.api_key or not self.api_key.strip():

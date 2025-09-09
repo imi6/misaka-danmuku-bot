@@ -22,6 +22,7 @@ class WebhookHandler:
         # 从环境变量读取时区配置，默认为Asia/Shanghai
         self.timezone = ZoneInfo(os.getenv('TZ', 'Asia/Shanghai'))
         self._tmdb_cache = {}  # TMDB搜索结果缓存
+        self._play_event_cache = {}  # 播放事件缓存，避免重复处理
         
     def validate_api_key(self, provided_key: str) -> bool:
         """验证API密钥"""
@@ -292,6 +293,13 @@ class WebhookHandler:
             media_info: 媒体信息
         """
         try:
+            # 检查是否为重复播放事件
+        if self._is_duplicate_play_event(media_info, cooldown_hours=self.config.webhook.play_event_cooldown_hours):
+                return  # 跳过重复处理
+            
+            # 记录播放事件
+            self._record_play_event(media_info)
+            
             media_type = media_info.get('type', '')
             title = media_info.get('title')
             
@@ -716,6 +724,91 @@ class WebhookHandler:
                 logger.debug(f"🗑️ 清理过期TMDB缓存: {series_name}")
         
         return None
+    
+    def _generate_media_key(self, media_info: Dict[str, str]) -> str:
+        """生成媒体唯一标识符
+        
+        Args:
+            media_info: 媒体信息
+            
+        Returns:
+            str: 媒体唯一标识符
+        """
+        # 优先使用Provider ID作为唯一标识
+        provider_ids = []
+        for provider in ['tmdb_id', 'imdb_id', 'tvdb_id', 'douban_id', 'bangumi_id']:
+            if media_info.get(provider):
+                provider_ids.append(f"{provider}:{media_info[provider]}")
+        
+        if provider_ids:
+            base_key = "|".join(provider_ids)
+        else:
+            # 如果没有Provider ID，使用标题和年份
+            title = media_info.get('title', '').lower().strip()
+            year = media_info.get('year', '')
+            base_key = f"title:{title}|year:{year}"
+        
+        # 对于电视剧，添加季度和集数信息
+        if media_info.get('type') == 'Episode':
+            season = media_info.get('season', '')
+            episode = media_info.get('episode', '')
+            base_key += f"|season:{season}|episode:{episode}"
+        
+        return base_key
+    
+    def _is_duplicate_play_event(self, media_info: Dict[str, str], cooldown_hours: Optional[int] = None) -> bool:
+        """检查是否为重复的播放事件
+        
+        Args:
+            media_info: 媒体信息
+            cooldown_hours: 冷却时间（小时），默认1小时
+            
+        Returns:
+            bool: 如果是重复事件返回True
+        """
+        import time
+        
+        # 使用传入的冷却时间或配置文件中的默认值
+        if cooldown_hours is None:
+            cooldown_hours = self.config.webhook.play_event_cooldown_hours
+        
+        media_key = self._generate_media_key(media_info)
+        current_time = time.time()
+        cooldown_seconds = cooldown_hours * 3600
+        
+        # 检查缓存中是否存在该媒体的最近播放记录
+        if media_key in self._play_event_cache:
+            last_play_time = self._play_event_cache[media_key]
+            if current_time - last_play_time < cooldown_seconds:
+                logger.info(f"⏰ 检测到重复播放事件，跳过处理: {media_info.get('title')} (冷却中，剩余 {int((cooldown_seconds - (current_time - last_play_time)) / 60)} 分钟)")
+                return True
+        
+        return False
+    
+    def _record_play_event(self, media_info: Dict[str, str]) -> None:
+        """记录播放事件
+        
+        Args:
+            media_info: 媒体信息
+        """
+        import time
+        
+        media_key = self._generate_media_key(media_info)
+        current_time = time.time()
+        
+        # 记录播放时间
+        self._play_event_cache[media_key] = current_time
+        
+        # 清理过期的缓存记录（超过24小时）
+        expired_keys = []
+        for key, timestamp in self._play_event_cache.items():
+            if current_time - timestamp > 86400:  # 24小时
+                expired_keys.append(key)
+        
+        for key in expired_keys:
+            del self._play_event_cache[key]
+        
+        logger.debug(f"📝 记录播放事件: {media_info.get('title')} (缓存大小: {len(self._play_event_cache)})")
     
     async def _import_movie_by_provider(self, provider_id: str, provider_type: str = 'tmdb'):
         """使用优先级 provider 导入单个电影
