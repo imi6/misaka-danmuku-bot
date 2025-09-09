@@ -294,7 +294,7 @@ class WebhookHandler:
         """
         try:
             # 检查是否为重复播放事件
-        if self._is_duplicate_play_event(media_info, cooldown_hours=self.config.webhook.play_event_cooldown_hours):
+            if self._is_duplicate_play_event(media_info, cooldown_hours=self.config.webhook.play_event_cooldown_hours):
                 return  # 跳过重复处理
             
             # 记录播放事件
