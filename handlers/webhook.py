@@ -208,15 +208,17 @@ class WebhookHandler:
                 series_name = re.sub(r'\s*\(\d{4}\)\s*$', '', series_name)  # 移除年份括号
                 series_name = re.sub(r'\s*-\s*Season\s+\d+\s*$', '', series_name, flags=re.IGNORECASE)  # 移除季度后缀
             
-            # 提取TMDB ID信息（Emby刮削后的元数据）
+            # 提取Provider ID信息（Emby刮削后的元数据）
             provider_ids = item.get('ProviderIds', {})
             tmdb_id = provider_ids.get('Tmdb') or provider_ids.get('TheMovieDb')
             imdb_id = provider_ids.get('Imdb')
             tvdb_id = provider_ids.get('Tvdb') or provider_ids.get('TheTVDB')
+            douban_id = provider_ids.get('Douban') or provider_ids.get('DoubanMovie')
+            bangumi_id = provider_ids.get('Bangumi') or provider_ids.get('BGM')
             
             # 调试日志：显示提供商ID信息
             logger.debug(f"🔍 媒体提供商ID信息: {provider_ids}")
-            logger.debug(f"🎯 提取的TMDB ID: {tmdb_id}, IMDB ID: {imdb_id}, TVDB ID: {tvdb_id}")
+            logger.debug(f"🎯 提取的Provider ID: TMDB={tmdb_id}, IMDB={imdb_id}, TVDB={tvdb_id}, Douban={douban_id}, Bangumi={bangumi_id}")
             logger.debug(f"🎯 最终提取信息: 剧集='{series_name}', 季度={season_number}, 集数={episode_number}, 年份={year}, TMDB_ID={tmdb_id}")
             
             # 构建完整标题
@@ -239,6 +241,8 @@ class WebhookHandler:
                 "tmdb_id": tmdb_id or '',
                 "imdb_id": imdb_id or '',
                 "tvdb_id": tvdb_id or '',
+                "douban_id": douban_id or '',
+                "bangumi_id": bangumi_id or '',
                 "user": user.get('Name', '未知用户'),
                 "client": session.get('Client', '未知客户端'),
                 "device": session.get('DeviceName', '未知设备'),
