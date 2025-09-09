@@ -626,7 +626,7 @@ class WebhookHandler:
                             source_id = sources[0].get('sourceId')
                             if source_id:
                                 # 传递剧集名称和年份，用于TMDB搜索
-                                await self._refresh_episodes(source_id, [episode, episode + 1], tmdb_id, season, series_name, year)
+                                await self._refresh_episodes(source_id, [episode, episode + 1], provider_id, season, series_name, year)
                             else:
                                 logger.error(f"❌ 无法获取源ID: {selected_match.get('title')}")
                         else:
