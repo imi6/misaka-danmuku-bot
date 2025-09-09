@@ -273,6 +273,23 @@ async def get_library_data():
         logger.error(f"获取库数据异常: {e}")
         return []
 
+async def refresh_library_cache():
+    """强制刷新库缓存"""
+    import time
+    try:
+        response = call_danmaku_api('GET', '/library')
+        if response and 'success' in response and response['success']:
+            library_cache['data'] = response.get('data', [])
+            library_cache['timestamp'] = time.time()
+            logger.info(f"🔄 库缓存已强制刷新，共 {len(library_cache['data'])} 条记录")
+            return library_cache['data']
+        else:
+            logger.error(f"强制刷新库缓存失败: {response}")
+            return None
+    except Exception as e:
+        logger.error(f"强制刷新库缓存异常: {e}")
+        return None
+
 async def init_library_cache():
     """初始化库缓存，在Bot启动时调用"""
     logger.info("🔄 正在初始化影视库缓存...")
