@@ -497,7 +497,7 @@ async def execute_episode_refresh(update: Update, context: ContextTypes.DEFAULT_
     )
     
     if task_ids:
-        result_message += f"🔗 任务ID：{len(task_ids)} 个刷新任务已提交"
+        result_message += f"🔗 {len(task_ids)} 个刷新任务已提交"
     
     await update.message.reply_text(result_message, parse_mode='Markdown')
     

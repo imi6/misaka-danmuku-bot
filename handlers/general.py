@@ -14,13 +14,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 您是管理员，可使用以下所有指令：
 
 【📥 媒体导入】
-/search [关键词] - 搜索媒体（如：/search 火影忍者）
+/search [关键词] - 搜索媒体
 /auto - 自动导入媒体（支持关键词搜索和多平台链接导入）
 /url - 为已存在的数据源导入指定集数
 /refresh - 刷新数据源
 
 【🔑 Token管理】
 /tokens - 管理API访问令牌
+
+【📋 任务管理】
+/tasks - 查看任务列表
 
 【其他】
 /help  - 查看帮助信息
@@ -33,8 +36,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [
             [KeyboardButton("/search"), KeyboardButton("/auto")],
             [KeyboardButton("/url"), KeyboardButton("/refresh")],
-            [KeyboardButton("/tokens"), KeyboardButton("/help")],
-            [KeyboardButton("/cancel")]
+            [KeyboardButton("/tokens"), KeyboardButton("/tasks")],
+            [KeyboardButton("/help"), KeyboardButton("/cancel")]
         ]
     else:
         welcome_msg = """
@@ -49,6 +52,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /url - 为已存在的数据源导入指定集数
 /refresh - 刷新数据源
 /tokens - 管理API访问令牌
+/tasks - 查看任务列表
 
 【其他】
 /help  - 查看帮助信息

@@ -235,6 +235,7 @@ async def _setup_bot_commands(application: Application):
         BotCommand("url", "为已存在的数据源导入指定集数"),
         BotCommand("refresh", "刷新数据源"),
         BotCommand("tokens", "管理API令牌"),
+        BotCommand("tasks", "查看任务列表"),
         BotCommand("users", "管理用户权限（仅管理员）"),
         BotCommand("help", "查看帮助信息"),
         BotCommand("cancel", "取消当前操作")
@@ -497,6 +498,21 @@ def _setup_handlers(application, handlers_module, callback_module):
     user_management_handler = create_user_management_handler()
     application.add_handler(user_management_handler)
     current_handlers["user_management_handler"] = user_management_handler
+    
+    # 导入并注册tasks处理器
+    from handlers.tasks import create_tasks_handler
+    tasks_handler = create_tasks_handler()
+    application.add_handler(tasks_handler)
+    current_handlers["tasks_handler"] = tasks_handler
+    
+    # 导入并注册tasks回调处理器
+    from callback.tasks import handle_tasks_callback
+    tasks_callback_handler = CallbackQueryHandler(
+        _wrap_with_session_management(handle_tasks_callback),
+        pattern=r'tasks_(refresh|status)_.*'
+    )
+    application.add_handler(tasks_callback_handler)
+    current_handlers["tasks_callback_handler"] = tasks_callback_handler
 
 
 async def init_bot() -> Application:
