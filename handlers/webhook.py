@@ -1538,7 +1538,7 @@ class WebhookHandler:
                 return
             
             # 使用现有的TELEGRAM_BOT_TOKEN创建Bot实例
-            callback_bot = Bot(token=self.config.telegram_bot_token)
+            callback_bot = Bot(token=self.config.telegram.bot_token)
             
             # 构建通知消息
             timestamp = datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d %H:%M:%S")
