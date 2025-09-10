@@ -393,10 +393,15 @@ class WebhookHandler:
                            if match.get('title', '').lower() == movie_title.lower()]
             
             if not exact_matches:
-                # 未找到精确匹配：使用优先级 provider ID 自动导入电影
-                if provider_id:
+                # 未找到精确匹配：检查是否为识别词匹配
+                identify_matched = media_info.get('identify_matched', False)
+                if identify_matched:
+                    # 识别词匹配时直接使用关键词导入
+                    logger.info(f"🎯 识别词匹配且库中无对应资源，直接使用关键词导入: {movie_title}")
+                    await self._import_movie_by_provider(None, 'keyword', movie_title, identify_matched)
+                elif provider_id:
+                    # 非识别词匹配时使用优先级 provider ID 自动导入电影
                     logger.info(f"📥 未找到匹配的电影，开始自动导入: {movie_title} ({year}) 使用 {provider_type.upper()} ID")
-                    identify_matched = media_info.get('identify_matched', False)
                     await self._import_movie_by_provider(provider_id, provider_type, movie_title, identify_matched)
                 else:
                     logger.warning(f"⚠️ 无法导入电影，缺少有效的 provider ID: {movie_title}")
@@ -543,11 +548,19 @@ class WebhookHandler:
                             break
             
             # 如果没有找到季度匹配、没有完全匹配的季度或未匹配到具体集数，尝试通过TMDB API搜索
+            # 但如果识别词匹配，则跳过TMDB搜索直接使用关键词导入
+            identify_matched = media_info.get('identify_matched', False)
             should_search_tmdb = (
                 not season_matches or 
                 (season and not exact_season_match) or 
                 not episode
-            ) and not provider_id
+            ) and not provider_id and not identify_matched
+            
+            # 如果识别词匹配但库中无对应资源，直接使用关键词导入
+            if identify_matched and not season_matches:
+                logger.info(f"🎯 识别词匹配且库中无对应资源，直接使用关键词导入: {series_name}")
+                await self._import_episodes_by_provider(None, 'keyword', season, [episode, episode + 1] if episode else None, series_name, identify_matched)
+                return True
             
             if should_search_tmdb:
                 logger.info(f"🔍 触发TMDB搜索原因: 无匹配项={not season_matches}, 季度不匹配={season and not exact_season_match}, 无集数={not episode}")
@@ -688,6 +701,16 @@ class WebhookHandler:
             provider_type: 优先级provider类型
         """
         try:
+            # 如果识别词匹配，直接使用关键词导入，跳过TMDB搜索
+            if identify_matched:
+                logger.info(f"🎯 识别词匹配，直接使用关键词导入: {title}")
+                if media_type == 'movie':
+                    await self._import_movie_by_provider(None, 'keyword', title, identify_matched)
+                    return
+                elif media_type == 'tv':
+                    await self._import_episodes_by_provider(None, 'keyword', season, [episode, episode + 1] if episode else None, title, identify_matched)
+                    return
+            
             # 优先使用provider信息进行导入
             if provider_id and provider_type:
                 logger.info(f"📥 使用优先级provider进行导入: {title} ({provider_type.upper()}: {provider_id})")
