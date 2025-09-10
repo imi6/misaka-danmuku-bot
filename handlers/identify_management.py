@@ -63,7 +63,7 @@ async def identify_original_name_input(update: Update, context: ContextTypes.DEF
     await update.message.reply_text(
         f"✅ 原始影视名称：**{original_name}**\n\n"
         f"**步骤 2/4**: 请输入需要识别的影视季度\n"
-        f"例如：9",
+        f"例如：9（电视剧第9季）或 0（电影）",
         parse_mode='Markdown'
     )
     
@@ -77,19 +77,25 @@ async def identify_original_season_input(update: Update, context: ContextTypes.D
     
     try:
         original_season = int(season_text)
-        if original_season <= 0:
-            raise ValueError("季度必须是正整数")
+        if original_season < 0:
+            raise ValueError("季度必须是非负整数")
     except ValueError:
         await update.message.reply_text(
-            "❌ 请输入有效的季度数字（正整数），例如：9"
+            "❌ 请输入有效的季度数字（非负整数），例如：9（电视剧）或 0（电影）"
         )
         return IDENTIFY_ORIGINAL_SEASON
     
     # 保存原始季度
     context.user_data['identify_data']['original_season'] = original_season
     
+    # 根据季度显示不同的确认信息
+    if original_season == 0:
+        season_display = "**电影**"
+    else:
+        season_display = f"**第{original_season}季**"
+    
     await update.message.reply_text(
-        f"✅ 原始季度：**第{original_season}季**\n\n"
+        f"✅ 原始季度：{season_display}\n\n"
         f"**步骤 3/4**: 请输入识别后的影视名称\n"
         f"例如：中餐厅·非洲创业季",
         parse_mode='Markdown'
@@ -115,7 +121,7 @@ async def identify_target_name_input(update: Update, context: ContextTypes.DEFAU
     await update.message.reply_text(
         f"✅ 目标影视名称：**{target_name}**\n\n"
         f"**步骤 4/4**: 请输入识别后的影视季度\n"
-        f"例如：1",
+        f"例如：1（电视剧第1季）或 0（电影）",
         parse_mode='Markdown'
     )
     
@@ -129,11 +135,11 @@ async def identify_target_season_input(update: Update, context: ContextTypes.DEF
     
     try:
         target_season = int(season_text)
-        if target_season <= 0:
-            raise ValueError("季度必须是正整数")
+        if target_season < 0:
+            raise ValueError("季度必须是非负整数")
     except ValueError:
         await update.message.reply_text(
-            "❌ 请输入有效的季度数字（正整数），例如：1"
+            "❌ 请输入有效的季度数字（非负整数），例如：1（电视剧）或 0（电影）"
         )
         return IDENTIFY_TARGET_SEASON
     
@@ -148,13 +154,35 @@ async def identify_target_season_input(update: Update, context: ContextTypes.DEF
     target_season = identify_data['target_season']
     
     # 构建识别词映射规则
-    mapping_rule = f"{original_name} S{original_season:02d} => {target_name} S{target_season:02d}"
+    # 如果季度为0（电影），则不包含S00信息
+    if original_season == 0:
+        original_part = original_name
+    else:
+        original_part = f"{original_name} S{original_season:02d}"
+    
+    if target_season == 0:
+        target_part = target_name
+    else:
+        target_part = f"{target_name} S{target_season:02d}"
+    
+    mapping_rule = f"{original_part} => {target_part}"
     
     # 显示确认信息
+    # 根据季度显示不同的确认信息
+    if original_season == 0:
+        original_display = f"{original_name} (电影)"
+    else:
+        original_display = f"{original_name} 第{original_season}季"
+    
+    if target_season == 0:
+        target_display = f"{target_name} (电影)"
+    else:
+        target_display = f"{target_name} 第{target_season}季"
+    
     await update.message.reply_text(
         f"📋 **识别词映射确认**\n\n"
-        f"**原始**: {original_name} 第{original_season}季\n"
-        f"**目标**: {target_name} 第{target_season}季\n\n"
+        f"**原始**: {original_display}\n"
+        f"**目标**: {target_display}\n\n"
         f"**映射规则**: `{mapping_rule}`\n\n"
         f"正在添加到配置文件...",
         parse_mode='Markdown'
@@ -168,7 +196,7 @@ async def identify_target_season_input(update: Update, context: ContextTypes.DEF
             f"✅ **识别词添加成功！**\n\n"
             f"映射规则已添加到配置文件：\n"
             f"`{mapping_rule}`\n\n"
-            f"现在Emby webhook会自动将 **{original_name} S{original_season:02d}** 转换为 **{target_name} S{target_season:02d}**",
+            f"现在Emby webhook会自动将 **{original_part}** 转换为 **{target_part}**",
             parse_mode='Markdown'
         )
         logger.info(f"✅ 用户 {update.effective_user.id} 添加识别词映射: {mapping_rule}")
