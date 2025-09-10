@@ -213,6 +213,7 @@ class WebhookHandler:
                 series_name = re.sub(r'\s*-\s*Season\s+\d+\s*$', '', series_name, flags=re.IGNORECASE)  # 移除季度后缀
             
             # 应用名称转换映射（如果是剧集且有必要信息）
+            identify_matched = False  # 标记是否匹配了识别词
             if media_type == 'Episode' and series_name and season_number:
                 try:
                     converted_result = convert_emby_series_name(series_name, season_number)
@@ -220,6 +221,7 @@ class WebhookHandler:
                         logger.info(f"🔄 名称转换成功: '{series_name}' S{season_number:02d} -> '{converted_result['series_name']}' S{converted_result['season_number']:02d}")
                         series_name = converted_result['series_name']
                         season_number = converted_result['season_number']
+                        identify_matched = True  # 标记匹配了识别词
                     else:
                         logger.debug(f"📝 未找到名称转换规则: '{series_name}' S{season_number:02d}")
                 except Exception as e:
@@ -260,6 +262,7 @@ class WebhookHandler:
                 "tvdb_id": tvdb_id or '',
                 "douban_id": douban_id or '',
                 "bangumi_id": bangumi_id or '',
+                "identify_matched": identify_matched,  # 添加识别词匹配标识
                 "user": user.get('Name', '未知用户'),
                 "client": session.get('Client', '未知客户端'),
                 "device": session.get('DeviceName', '未知设备'),
@@ -393,7 +396,8 @@ class WebhookHandler:
                 # 未找到精确匹配：使用优先级 provider ID 自动导入电影
                 if provider_id:
                     logger.info(f"📥 未找到匹配的电影，开始自动导入: {movie_title} ({year}) 使用 {provider_type.upper()} ID")
-                    await self._import_movie_by_provider(provider_id, provider_type, movie_title)
+                    identify_matched = media_info.get('identify_matched', False)
+                    await self._import_movie_by_provider(provider_id, provider_type, movie_title, identify_matched)
                 else:
                     logger.warning(f"⚠️ 无法导入电影，缺少有效的 provider ID: {movie_title}")
             else:
@@ -428,8 +432,9 @@ class WebhookHandler:
                 
                 # 如果刷新失败，继续执行TMDB智能识别和导入
                 if not refresh_success:
+                    identify_matched = media_info.get('identify_matched', False)
                     await self._fallback_tmdb_search_and_import(movie_title, year, media_type='movie', 
-                                                               provider_id=provider_id, provider_type=provider_type)
+                                                               provider_id=provider_id, provider_type=provider_type, identify_matched=identify_matched)
                     
         except Exception as e:
             logger.error(f"❌ 电影智能管理处理失败: {e}", exc_info=True)
@@ -608,7 +613,8 @@ class WebhookHandler:
                 # 未找到匹配项：检查是否有 provider ID 进行自动导入
                 if provider_id:
                     logger.info(f"📥 未找到匹配项，开始自动导入: {series_name} S{season} ({provider_type.upper()}: {provider_id})")
-                    await self._import_episodes_by_provider(provider_id, provider_type, season, [episode, episode + 1] if episode else None, series_name)
+                    identify_matched = media_info.get('identify_matched', False)
+                    await self._import_episodes_by_provider(provider_id, provider_type, season, [episode, episode + 1] if episode else None, series_name, identify_matched)
                 else:
                     # 尝试通过TMDB API搜索获取TMDB ID
                     logger.info(f"🔍 未找到匹配项且缺少 provider ID，尝试通过TMDB搜索: {series_name} ({year})")
@@ -620,7 +626,8 @@ class WebhookHandler:
                             found_tmdb_id = tmdb_search_result.get('tmdb_id')
                             logger.info(f"✅ TMDB搜索成功，找到匹配的剧集: {tmdb_search_result.get('name')} (ID: {found_tmdb_id})")
                             logger.info(f"📥 开始自动导入: {series_name} S{season} (TMDB: {found_tmdb_id})")
-                            await self._import_episodes_by_provider(found_tmdb_id, 'tmdb', season, [episode, episode + 1] if episode else None, series_name)
+                            identify_matched = media_info.get('identify_matched', False)
+                            await self._import_episodes_by_provider(found_tmdb_id, 'tmdb', season, [episode, episode + 1] if episode else None, series_name, identify_matched)
                         else:
                             logger.warning(f"⚠️ TMDB搜索结果验证失败: {series_name}")
                             logger.debug(f"💡 建议: 请检查剧集名称和年份是否正确，或在Emby中添加正确的TMDB刮削信息")
@@ -660,14 +667,15 @@ class WebhookHandler:
                 
                 # 如果刷新失败，继续执行TMDB智能识别
                 if not refresh_success:
+                    identify_matched = media_info.get('identify_matched', False)
                     await self._fallback_tmdb_search_and_import(series_name, year, season, episode, 'tv',
-                                                               provider_id=provider_id, provider_type=provider_type)
+                                                               provider_id=provider_id, provider_type=provider_type, identify_matched=identify_matched)
                     
         except Exception as e:
             logger.error(f"❌ 电视剧智能管理处理失败: {e}", exc_info=True)
     
     async def _fallback_tmdb_search_and_import(self, title: str, year: str = None, season: int = None, episode: int = None, 
-                                             media_type: str = 'tv', provider_id: str = None, provider_type: str = None):
+                                             media_type: str = 'tv', provider_id: str = None, provider_type: str = None, identify_matched: bool = False):
         """TMDB辅助查询和导入的通用方法
         
         Args:
@@ -684,10 +692,10 @@ class WebhookHandler:
             if provider_id and provider_type:
                 logger.info(f"📥 使用优先级provider进行导入: {title} ({provider_type.upper()}: {provider_id})")
                 if media_type == 'movie':
-                    await self._import_movie_by_provider(provider_id, provider_type, title)
+                    await self._import_movie_by_provider(provider_id, provider_type, title, identify_matched)
                     return
                 elif media_type == 'tv':
-                    await self._import_episodes_by_provider(provider_id, provider_type, season, None, title)
+                    await self._import_episodes_by_provider(provider_id, provider_type, season, None, title, identify_matched)
                     return
             
             if media_type == 'movie':
@@ -1027,7 +1035,7 @@ class WebhookHandler:
         except Exception as e:
             logger.error(f"❌ 导入电影时发生错误 (TMDB: {tmdb_id}): {e}", exc_info=True)
     
-    async def _import_movie_by_provider(self, provider_id: str, provider_type: str = 'tmdb', movie_title: str = None):
+    async def _import_movie_by_provider(self, provider_id: str, provider_type: str = 'tmdb', movie_title: str = None, identify_matched: bool = False):
         """使用优先级 provider 导入单个电影
         
         Args:
@@ -1039,10 +1047,20 @@ class WebhookHandler:
             logger.info(f"📥 开始导入电影 ({provider_type.upper()}: {provider_id})")
             
             # 调用导入API
-            import_params = {
-                "searchType": provider_type,
-                "searchTerm": provider_id
-            }
+            if identify_matched and movie_title:
+                # 识别词匹配时使用关键词模式
+                import_params = {
+                    "searchType": "keyword",
+                    "searchTerm": movie_title
+                }
+                logger.info(f"🎯 使用关键词模式导入电影: {movie_title}")
+            else:
+                # 非识别词匹配时使用provider模式
+                import_params = {
+                    "searchType": provider_type,
+                    "searchTerm": provider_id
+                }
+                logger.info(f"🚀 使用Provider模式导入电影: {provider_type.upper()} {provider_id}")
             
             response = call_danmaku_api('POST', '/import/auto', params=import_params)
             
@@ -1167,7 +1185,7 @@ class WebhookHandler:
         except Exception as e:
             logger.error(f"❌ 刷新电影时发生错误 (源ID: {source_id}): {e}", exc_info=True)
     
-    async def _import_episodes_by_provider(self, provider_id: str, provider_type: str, season: int, episodes: list, series_name: str = None):
+    async def _import_episodes_by_provider(self, provider_id: str, provider_type: str, season: int, episodes: list, series_name: str = None, identify_matched: bool = False):
         """根据provider类型导入指定集数
         
         Args:
@@ -1245,15 +1263,26 @@ class WebhookHandler:
                     continue
                 
                 # 构建导入参数
-                import_params = {
-                    "searchType": search_type,
-                    "searchTerm": provider_id,
-                    "mediaType": "tv_series",
-                    "season": season,
-                    "episode": episode_num
-                }
-                
-                logger.info(f"🚀 开始导入: {provider_type.upper()} {provider_id} S{season:02d}E{episode_num:02d}")
+                if identify_matched and series_name:
+                    # 识别词匹配时使用关键词模式
+                    import_params = {
+                        "searchType": "keyword",
+                        "searchTerm": series_name,
+                        "mediaType": "tv_series",
+                        "season": season,
+                        "episode": episode_num
+                    }
+                    logger.info(f"🎯 使用关键词模式导入: {series_name} S{season:02d}E{episode_num:02d}")
+                else:
+                    # 非识别词匹配时使用provider模式
+                    import_params = {
+                        "searchType": search_type,
+                        "searchTerm": provider_id,
+                        "mediaType": "tv_series",
+                        "season": season,
+                        "episode": episode_num
+                    }
+                    logger.info(f"🚀 使用Provider模式导入: {provider_type.upper()} {provider_id} S{season:02d}E{episode_num:02d}")
                 
                 # 调用导入API
                 try:
