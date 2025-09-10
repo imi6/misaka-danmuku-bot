@@ -115,7 +115,7 @@ app/
 - `TVDB_API_KEY`: TVDB API 密钥（用于 TVDB 链接解析和媒体信息获取，从 https://thetvdb.com/api-information 获取）
 - `BGM_ACCESS_TOKEN`: Bangumi API 访问令牌（用于 BGM 链接解析和媒体信息获取，从 https://bgm.tv/dev/app 创建应用获取）
 - `WEBHOOK_PORT`: Webhook 监听端口（默认 7769）
-- `WEBHOOK_API_KEY`: Webhook API 密钥（用于验证请求来源）
+- `WEBHOOK_API_KEY`: Webhook API 密钥（用于验证请求来源）-- 使用方式同御坂通知，端口改成WEBHOOK_PORT自定义的即可
 - `TELEGRAM_CONNECT_TIMEOUT`: Telegram 连接超时时间（秒，默认 30）
 - `TELEGRAM_READ_TIMEOUT`: Telegram 读取超时时间（秒，默认 30）
 - `TELEGRAM_POOL_TIMEOUT`: Telegram 连接池超时时间（秒，默认 60）
