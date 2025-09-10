@@ -1596,11 +1596,26 @@ class WebhookHandler:
                 status_text = "失败"
             
             # 构建操作类型描述
-            operation_text = "导入" if operation_type == "import" else "刷新"
+            base_operation_text = "导入" if operation_type == "import" else "刷新"
+            
+            # 为剧集构建包含季集信息的操作描述
+            operation_text = base_operation_text
+            if media_info.get('Type') == 'Series':
+                season = media_info.get('Season')
+                episodes = media_info.get('Episodes', [])
+                
+                if season and episodes:
+                    # 构建季集信息字符串
+                    episode_list = []
+                    for ep in episodes:
+                        episode_list.append(f"S{season}E{ep:02d}")
+                    
+                    if episode_list:
+                        operation_text = f"{base_operation_text}{','.join(episode_list)}"
             
             # 构建通知消息
             message_lines = [
-                f"🎬 **Webhook {operation_text}通知**",
+                f"🎬 **Webhook {base_operation_text}通知**",
                 f"",
                 f"📺 **媒体信息**",
                 f"• 名称: {media_name}",
