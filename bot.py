@@ -237,6 +237,7 @@ async def _setup_bot_commands(application: Application):
         BotCommand("tokens", "管理API令牌"),
         BotCommand("tasks", "查看任务列表"),
         BotCommand("users", "管理用户权限（仅管理员）"),
+        BotCommand("identify", "管理识别词映射（仅管理员）"),
         BotCommand("help", "查看帮助信息"),
         BotCommand("cancel", "取消当前操作")
     ]
@@ -513,6 +514,61 @@ def _setup_handlers(application, handlers_module, callback_module):
     )
     application.add_handler(tasks_callback_handler)
     current_handlers["tasks_callback_handler"] = tasks_callback_handler
+    
+    # 导入并注册identify管理处理器
+    from handlers.identify_management import (
+        identify_command,
+        identify_original_name_input,
+        identify_original_season_input,
+        identify_target_name_input,
+        identify_target_season_input,
+        identify_cancel,
+        IDENTIFY_ORIGINAL_NAME,
+        IDENTIFY_ORIGINAL_SEASON,
+        IDENTIFY_TARGET_NAME,
+        IDENTIFY_TARGET_SEASON
+    )
+    
+    identify_handler = ConversationHandler(
+        entry_points=[CommandHandler("identify", _wrap_conversation_entry_point(identify_command))],
+        states={
+            IDENTIFY_ORIGINAL_NAME: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND,
+                    _wrap_with_session_management(identify_original_name_input)
+                )
+            ],
+            IDENTIFY_ORIGINAL_SEASON: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND,
+                    _wrap_with_session_management(identify_original_season_input)
+                )
+            ],
+            IDENTIFY_TARGET_NAME: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND,
+                    _wrap_with_session_management(identify_target_name_input)
+                )
+            ],
+            IDENTIFY_TARGET_SEASON: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND,
+                    _wrap_with_session_management(identify_target_season_input)
+                )
+            ],
+        },
+        fallbacks=[
+            CommandHandler("cancel", _wrap_with_session_management(identify_cancel)),
+            CommandHandler("search", _wrap_conversation_entry_point(search_media)),
+            CommandHandler("auto", _wrap_conversation_entry_point(import_auto)),
+            CommandHandler("start", _wrap_with_session_management(start)),
+            CommandHandler("help", _wrap_with_session_management(help_command))
+        ],
+        per_chat=True,
+        per_user=True,
+    )
+    application.add_handler(identify_handler)
+    current_handlers["identify_handler"] = identify_handler
 
 
 async def init_bot() -> Application:
@@ -551,6 +607,16 @@ async def init_bot() -> Application:
 
     # 步骤5: 设置 Bot 命令菜单
     await _setup_bot_commands(application)
+
+    # 步骤6: 初始化识别词配置文件
+    try:
+        from utils.identify_config import initialize_identify_config
+        if initialize_identify_config():
+            logger.info("✅ 识别词配置文件初始化成功")
+        else:
+            logger.warning("⚠️ 识别词配置文件初始化失败")
+    except Exception as e:
+        logger.error(f"❌ 识别词配置文件初始化异常: {e}")
 
     # 步骤7: 设置webhook处理器的Bot实例
     try:
