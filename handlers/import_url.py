@@ -241,107 +241,54 @@ def clean_page_title(title: str) -> str:
 
 
 
-# 库缓存
-library_cache = {
-    'data': None,
-    'timestamp': 0,
-    'ttl': 3600  # 1小时缓存
-}
+# 库缓存机制已移除，改为直接调用/library/search接口
 
-async def get_library_data():
-    """获取库数据，带缓存机制"""
-    import time
-    current_time = time.time()
-    
-    # 检查缓存是否有效
-    if (library_cache['data'] is not None and 
-        current_time - library_cache['timestamp'] < library_cache['ttl']):
-        return library_cache['data']
-    
-    # 缓存过期或不存在，重新获取
-    try:
-        response = call_danmaku_api('GET', '/library')
-        if response and 'success' in response and response['success']:
-            library_cache['data'] = response.get('data', [])
-            library_cache['timestamp'] = current_time
-            logger.info(f"库数据已缓存，共 {len(library_cache['data'])} 条记录")
-            return library_cache['data']
-        else:
-            logger.error(f"获取库数据失败: {response}")
-            return []
-    except Exception as e:
-        logger.error(f"获取库数据异常: {e}")
-        return []
-
-async def refresh_library_cache():
-    """强制刷新库缓存"""
-    import time
-    try:
-        response = call_danmaku_api('GET', '/library')
-        if response and 'success' in response and response['success']:
-            library_cache['data'] = response.get('data', [])
-            library_cache['timestamp'] = time.time()
-            logger.info(f"🔄 库缓存已强制刷新，共 {len(library_cache['data'])} 条记录")
-            return library_cache['data']
-        else:
-            logger.error(f"强制刷新库缓存失败: {response}")
-            return None
-    except Exception as e:
-        logger.error(f"强制刷新库缓存异常: {e}")
-        return None
-
-async def init_library_cache():
-    """初始化库缓存，在Bot启动时调用"""
-    logger.info("🔄 正在初始化影视库缓存...")
-    data = await get_library_data()
-    if data:
-        logger.info(f"✅ 影视库缓存初始化成功，共加载 {len(data)} 条记录")
-    else:
-        logger.warning("⚠️ 影视库缓存初始化失败，将在首次使用时重试")
-    return data
-
-def search_video_by_keyword(library_data, keyword, media_type=None):
-    """根据关键词搜索影视，支持双向匹配和智能匹配
+def search_video_by_keyword(keyword, media_type=None):
+    """通过调用/library/search接口搜索影视资源
     
     Args:
-        library_data: 影视库数据
         keyword: 搜索关键词
         media_type: 媒体类型过滤 ('movie' 或 'tv_series')，None表示不过滤
     
     Returns:
         list: 匹配的影视列表
     """
-    keyword = keyword.lower().strip()
-    matches = []
-    exact_matches = []  # 精确匹配结果
-    partial_matches = []  # 部分匹配结果
+    from utils.api import call_danmaku_api
     
-    for anime in library_data:
-        title = anime.get('title', '').lower()
+    try:
+        # 调用新的搜索接口
+        api_result = call_danmaku_api(
+            method="GET",
+            endpoint="/library/search",
+            params={"keyword": keyword}
+        )
+        
+        if not api_result.get("success"):
+            logger.error(f"搜索接口调用失败: {api_result.get('error', '未知错误')}")
+            return []
+        
+        search_results = api_result.get("data", [])
         
         # 如果指定了媒体类型，进行类型过滤
         if media_type:
-            anime_type = anime.get('type', '').lower()
-            if media_type == 'movie':
-                # 电影类型匹配
-                if anime_type not in ['movie', '电影']:
-                    continue
-            elif media_type == 'tv_series':
-                # 电视剧类型匹配（排除电影类型）
-                if anime_type in ['movie', '电影']:
-                    continue
+            filtered_results = []
+            for anime in search_results:
+                anime_type = anime.get('type', '').lower()
+                if media_type == 'movie':
+                    # 电影类型匹配
+                    if anime_type in ['movie', '电影']:
+                        filtered_results.append(anime)
+                elif media_type == 'tv_series':
+                    # 电视剧类型匹配（排除电影类型）
+                    if anime_type not in ['movie', '电影']:
+                        filtered_results.append(anime)
+            return filtered_results
         
-        # 精确匹配（完全相等）
-        if keyword == title:
-            exact_matches.append(anime)
-        # 双向包含匹配：关键词包含标题 或 标题包含关键词
-        elif keyword in title or title in keyword:
-            partial_matches.append(anime)
-    
-    # 优先返回精确匹配，然后是部分匹配
-    matches = exact_matches + partial_matches
-    
-    return matches
+        return search_results
+        
+    except Exception as e:
+        logger.error(f"搜索视频时发生异常: {e}")
+        return []
 
 def is_movie_source(anime):
     """检测影视是否为电影类型
@@ -484,31 +431,26 @@ async def import_url_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     title_type = "节目标题" if show_title else "页面标题"
                     await update.message.reply_text(f"✅ URL验证成功: {url}\n📄 {title_type}: {match_keyword}\n\n🔍 正在尝试自动匹配影视库...")
                     
-                    # 获取库数据
-                    library_data = await get_library_data()
-                    if library_data:
-                        # 使用节目标题或页面标题搜索匹配的影视
-                        matches = search_video_by_keyword(library_data, match_keyword)
-                        
-                        if matches:
-                            if len(matches) == 1:
-                                # 只有一个匹配结果，直接进入源选择
-                                video = matches[0]
-                                context.user_data['selected_anime'] = video
-                                context.user_data['current_state'] = SOURCE_SELECT
-                                await update.message.reply_text(f"🎯 自动匹配成功: {video.get('title', '未知标题')}")
-                                return await show_video_sources(update, context, video)
-                            else:
-                                # 多个匹配结果，让用户选择
-                                context.user_data['anime_matches'] = matches
-                                context.user_data['current_state'] = ANIME_SELECT
-                                await update.message.reply_text(f"🎯 找到 {len(matches)} 个可能的匹配结果")
-                                return await show_video_selection(update, context, matches)
-                        
+                    # 使用节目标题或页面标题搜索匹配的影视
+                    matches = search_video_by_keyword(match_keyword)
+                    
+                    if matches:
+                        if len(matches) == 1:
+                            # 只有一个匹配结果，直接进入源选择
+                            video = matches[0]
+                            context.user_data['selected_anime'] = video
+                            context.user_data['current_state'] = SOURCE_SELECT
+                            await update.message.reply_text(f"🎯 自动匹配成功: {video.get('title', '未知标题')}")
+                            return await show_video_sources(update, context, video)
+                        else:
+                            # 多个匹配结果，让用户选择
+                            context.user_data['anime_matches'] = matches
+                            context.user_data['current_state'] = ANIME_SELECT
+                            await update.message.reply_text(f"🎯 找到 {len(matches)} 个可能的匹配结果")
+                            return await show_video_selection(update, context, matches)
+                    else:
                         # 自动匹配失败，进入手动输入流程
                         await update.message.reply_text(f"⚠️ 未能自动匹配到影视，请手动输入关键词搜索：")
-                    else:
-                        await update.message.reply_text(f"⚠️ 无法获取影视库数据，请手动输入关键词搜索：")
                 else:
                     # 没有页面标题，直接进入手动输入流程
                     await update.message.reply_text(f"✅ URL验证成功: {url}\n\n请输入关键词来搜索影视库：")
@@ -572,30 +514,26 @@ async def handle_url_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"✅ URL验证成功: {url}\n📄 {title_type}: {match_keyword}\n\n🔍 正在尝试自动匹配影视库...")
             
             # 获取库数据
-            library_data = await get_library_data()
-            if library_data:
-                # 使用节目标题或页面标题搜索匹配的影视
-                matches = search_video_by_keyword(library_data, match_keyword)
-                
-                if matches:
-                    if len(matches) == 1:
-                        # 只有一个匹配结果，直接进入源选择
-                        video = matches[0]
-                        context.user_data['selected_anime'] = video
-                        context.user_data['current_state'] = SOURCE_SELECT
-                        await update.message.reply_text(f"🎯 自动匹配成功: {video.get('title', '未知标题')}")
-                        return await show_video_sources(update, context, video)
-                    else:
-                        # 多个匹配结果，让用户选择
-                        context.user_data['anime_matches'] = matches
-                        context.user_data['current_state'] = ANIME_SELECT
-                        await update.message.reply_text(f"🎯 找到 {len(matches)} 个可能的匹配结果")
-                        return await show_video_selection(update, context, matches)
-                
+            # 使用节目标题或页面标题搜索匹配的影视
+            matches = search_video_by_keyword(match_keyword)
+            
+            if matches:
+                if len(matches) == 1:
+                    # 只有一个匹配结果，直接进入源选择
+                    video = matches[0]
+                    context.user_data['selected_anime'] = video
+                    context.user_data['current_state'] = SOURCE_SELECT
+                    await update.message.reply_text(f"🎯 自动匹配成功: {video.get('title', '未知标题')}")
+                    return await show_video_sources(update, context, video)
+                else:
+                    # 多个匹配结果，让用户选择
+                    context.user_data['anime_matches'] = matches
+                    context.user_data['current_state'] = ANIME_SELECT
+                    await update.message.reply_text(f"🎯 找到 {len(matches)} 个可能的匹配结果")
+                    return await show_video_selection(update, context, matches)
+            else:
                 # 自动匹配失败，进入手动输入流程
                 await update.message.reply_text(f"⚠️ 未能自动匹配到影视，请手动输入关键词搜索：")
-            else:
-                await update.message.reply_text(f"⚠️ 无法获取影视库数据，请手动输入关键词搜索：")
         else:
             # 没有页面标题，直接进入手动输入流程
             await update.message.reply_text(f"✅ URL验证成功: {url}\n\n请输入关键词来搜索影视库：")
@@ -621,16 +559,8 @@ async def handle_keyword_input(update: Update, context: ContextTypes.DEFAULT_TYP
         )
         return KEYWORD_INPUT
     
-    # 获取库数据
-    library_data = await get_library_data()
-    if not library_data:
-        await update.message.reply_text(
-            "❌ 无法获取影视库数据，请稍后重试"
-        )
-        return KEYWORD_INPUT
-    
     # 搜索匹配的影视
-    matches = search_video_by_keyword(library_data, keyword)
+    matches = search_video_by_keyword(keyword)
     
     if not matches:
         await update.message.reply_text(

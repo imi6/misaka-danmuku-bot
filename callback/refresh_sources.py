@@ -49,10 +49,26 @@ async def handle_anime_selection_callback(update: Update, context: ContextTypes.
     """处理从弹幕库选择动漫的回调"""
     query = update.callback_query
     
-    # 获取库数据
-    library_data = context.user_data.get('refresh_library_data')
-    if not library_data or anime_index >= len(library_data):
-        await query.edit_message_text("❌ 数据已过期，请重新开始")
+    # 显示加载状态
+    await query.edit_message_text("🔄 正在获取最新数据...")
+    
+    try:
+        # 重新调用/library接口获取最新库数据
+        response = call_danmaku_api('GET', '/library')
+        if not response or 'data' not in response:
+            await query.edit_message_text("❌ 获取弹幕库数据失败，请稍后重试")
+            from telegram.ext import ConversationHandler
+            return ConversationHandler.END
+        
+        library_data = response['data']
+        if not library_data or anime_index >= len(library_data):
+            await query.edit_message_text("❌ 数据索引无效或库为空，请重新开始")
+            from telegram.ext import ConversationHandler
+            return ConversationHandler.END
+            
+    except Exception as e:
+        logger.error(f"获取库数据失败: {e}")
+        await query.edit_message_text("❌ 获取弹幕库数据失败，请稍后重试")
         from telegram.ext import ConversationHandler
         return ConversationHandler.END
     
@@ -66,18 +82,9 @@ async def handle_anime_selection_callback(update: Update, context: ContextTypes.
 
 async def handle_library_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, page: int):
     """处理弹幕库列表分页回调"""
-    query = update.callback_query
-    
-    # 获取库数据
-    library_data = context.user_data.get('refresh_library_data')
-    if not library_data:
-        await query.edit_message_text("❌ 数据已过期，请重新开始")
-        from telegram.ext import ConversationHandler
-        return ConversationHandler.END
-    
-    # 显示指定页的库列表
+    # 直接显示指定页，无需重新加载数据
     from handlers.refresh_sources import show_library_selection
-    return await show_library_selection(update, context, library_data, page)
+    return await show_library_selection(update, context, page)
 
 async def handle_cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """处理取消操作的回调"""
@@ -86,8 +93,7 @@ async def handle_cancel_callback(update: Update, context: ContextTypes.DEFAULT_T
     # 清理用户数据
     keys_to_remove = [
         'refresh_keyword', 'refresh_anime_matches', 'refresh_selected_anime',
-        'refresh_selected_source', 'refresh_episodes', 'refresh_episode_ids',
-        'refresh_library_data'
+        'refresh_selected_source', 'refresh_episodes', 'refresh_episode_ids'
     ]
     for key in keys_to_remove:
         context.user_data.pop(key, None)

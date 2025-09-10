@@ -3,7 +3,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 from utils.api import call_danmaku_api
 from utils.permission import check_admin_permission
-from handlers.import_url import get_library_data, search_video_by_keyword
+from handlers.import_url import search_video_by_keyword
 
 logger = logging.getLogger(__name__)
 
@@ -51,14 +51,8 @@ async def handle_refresh_keyword_input(update: Update, context: ContextTypes.DEF
 async def process_refresh_search(update: Update, context: ContextTypes.DEFAULT_TYPE, keyword: str):
     """处理刷新搜索逻辑"""
     try:
-        # 获取库数据
-        library_data = await get_library_data()
-        if not library_data:
-            await update.message.reply_text("❌ 获取影视库数据失败，请稍后重试")
-            return ConversationHandler.END
-        
         # 搜索匹配的影视
-        matches = search_video_by_keyword(library_data, keyword)
+        matches = search_video_by_keyword(keyword)
         
         if not matches:
             await update.message.reply_text(
@@ -526,23 +520,37 @@ async def handle_refresh_from_library(update: Update, context: ContextTypes.DEFA
     query = update.callback_query
     await query.answer()
     
+    # 显示加载状态
+    await query.edit_message_text("🔄 正在加载弹幕库数据...")
+    
     try:
-        # 获取库数据
-        library_data = await get_library_data()
-        if not library_data:
-            await query.edit_message_text("❌ 获取弹幕库数据失败，请稍后重试")
-            return ConversationHandler.END
-        
-        # 显示库列表供选择
-        return await show_library_selection(update, context, library_data)
+        # 获取库数据并显示库列表供选择
+        return await show_library_selection(update, context)
         
     except Exception as e:
         logger.error(f"处理弹幕库选择时发生错误: {e}")
         await query.edit_message_text("❌ 获取弹幕库数据时发生错误，请稍后重试")
         return ConversationHandler.END
 
-async def show_library_selection(update: Update, context: ContextTypes.DEFAULT_TYPE, library_data, page=0):
+async def show_library_selection(update: Update, context: ContextTypes.DEFAULT_TYPE, page=0):
     """显示弹幕库列表供选择"""
+    try:
+        # 调用/library接口获取所有库数据
+        response = call_danmaku_api('GET', '/library')
+        if not response or 'data' not in response:
+            await update.callback_query.edit_message_text("❌ 获取弹幕库数据失败，请稍后重试")
+            return ConversationHandler.END
+        
+        library_data = response['data']
+        if not library_data:
+            await update.callback_query.edit_message_text("📚 弹幕库为空")
+            return ConversationHandler.END
+            
+    except Exception as e:
+        logger.error(f"获取库数据失败: {e}")
+        await update.callback_query.edit_message_text("❌ 获取弹幕库数据失败，请稍后重试")
+        return ConversationHandler.END
+    
     items_per_page = 10
     total_items = len(library_data)
     total_pages = (total_items + items_per_page - 1) // items_per_page
@@ -579,9 +587,6 @@ async def show_library_selection(update: Update, context: ContextTypes.DEFAULT_T
     keyboard.append([InlineKeyboardButton("❌ 取消", callback_data="refresh_cancel")])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    # 保存库数据到上下文
-    context.user_data['refresh_library_data'] = library_data
     
     query = update.callback_query
     if query:

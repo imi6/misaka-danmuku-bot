@@ -74,8 +74,8 @@ async def create_token_with_validity(update: Update, context: ContextTypes.DEFAU
         }
         
         response = call_danmaku_api(
-            endpoint='/tokens',
-            method='POST',
+            'POST',
+            '/tokens',
             json_data=payload
         )
         
@@ -113,7 +113,7 @@ async def refresh_tokens_list(update: Update, context: ContextTypes.DEFAULT_TYPE
     """刷新tokens列表"""
     try:
         # 调用API获取tokens列表
-        response = call_danmaku_api(endpoint='/tokens', method='GET')
+        response = call_danmaku_api('GET', '/tokens')
         
         if not response or not response.get('success'):
             await update.callback_query.edit_message_text("❌ 获取tokens列表失败")
@@ -188,8 +188,8 @@ async def toggle_token_status(update: Update, context: ContextTypes.DEFAULT_TYPE
     try:
         # 调用API切换token状态
         response = call_danmaku_api(
-            endpoint=f'/tokens/{token_id}/toggle',
-            method='PUT'
+            'PUT',
+            f'/tokens/{token_id}/toggle'
         )
         
         if response and response.get('success'):
@@ -228,8 +228,8 @@ async def delete_token(update: Update, context: ContextTypes.DEFAULT_TYPE, token
     try:
         # 调用API删除token
         response = call_danmaku_api(
-            endpoint=f'/tokens/{token_id}',
-            method='DELETE'
+            'DELETE',
+            f'/tokens/{token_id}'
         )
         
         if response and response.get('success'):

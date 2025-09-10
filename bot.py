@@ -535,13 +535,6 @@ async def init_bot() -> Application:
 
     # 步骤5: 设置 Bot 命令菜单
     await _setup_bot_commands(application)
-    
-    # 步骤6: 初始化弹幕库缓存
-    try:
-        from handlers.import_url import init_library_cache
-        await init_library_cache()
-    except Exception as e:
-        logger.warning(f"⚠️ 影视库缓存初始化失败: {e}")
 
     # 步骤7: 设置webhook处理器的Bot实例
     try:

@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from telegram import Bot
 from config import ConfigManager
-from handlers.import_url import get_library_data, search_video_by_keyword
+from handlers.import_url import search_video_by_keyword
 from utils.tmdb_api import get_tmdb_media_details, search_tv_series_by_name_year, validate_tv_series_match
 from utils.api import call_danmaku_api
 from utils.security import mask_sensitive_data
@@ -366,13 +366,8 @@ class WebhookHandler:
             
             logger.info(f"🎬 开始电影智能管理: {movie_title} ({year}) ({provider_type.upper()}: {provider_id})")
             
-            # 1. 检查缓存库中的电影，使用电影名称进行匹配
-            library_data = await get_library_data()
-            if not library_data:
-                logger.warning("⚠️ 无法获取影视库数据")
-                return
-            
-            matches = search_video_by_keyword(library_data, movie_title, media_type='movie')
+            # 1. 检查库中的电影，使用电影名称进行匹配
+            matches = search_video_by_keyword(movie_title, media_type='movie')
             
             # 电影严格匹配策略：优先完全匹配的标题
             exact_matches = [match for match in matches 
@@ -454,14 +449,8 @@ class WebhookHandler:
             
             logger.info(f"🤖 开始电视剧智能管理: {series_name} {'S' + str(season).zfill(2) if season else ''}{('E' + str(episode).zfill(2)) if episode else ''} ({provider_type.upper() if provider_type else 'NONE'}: {provider_id})")
             
-            # 1. 检查缓存库中的影视库，使用series_name和季度进行匹配
-            library_data = await get_library_data()
-            if not library_data:
-                logger.warning("⚠️ 无法获取影视库数据")
-                return
-
             # 使用剧名搜索电视剧类型的内容
-            matches = search_video_by_keyword(library_data, series_name, 'tv_series')
+            matches = search_video_by_keyword(series_name, 'tv_series')
             logger.info(f"📊 剧名搜索结果: {len(matches)} 个")
             
             # 计算匹配分数并筛选，重点关注season字段匹配
@@ -1013,12 +1002,8 @@ class WebhookHandler:
                 logger.info(f"✅ 电影导入成功 (TMDB: {tmdb_id})")
                 
                 # 导入成功后刷新library缓存
-                try:
-                    from handlers.import_url import refresh_library_cache
-                    await refresh_library_cache()
-                    logger.info("✅ Library缓存已刷新")
-                except Exception as cache_error:
-                    logger.warning(f"⚠️ Library缓存刷新失败: {cache_error}")
+                # 库缓存刷新已移除，改为直接调用/library/search接口
+                logger.info("✅ 电影导入成功")
             else:
                 error_msg = response.get('message', '未知错误') if response else '请求失败'
                 logger.error(f"❌ 电影导入失败 (TMDB: {tmdb_id}): {error_msg}")
@@ -1047,13 +1032,7 @@ class WebhookHandler:
             if response and response.get('success'):
                 logger.info(f"✅ 电影导入成功 ({provider_type.upper()}: {provider_id})")
                 
-                # 导入成功后刷新library缓存
-                try:
-                    from handlers.import_url import refresh_library_cache
-                    await refresh_library_cache()
-                    logger.info("✅ Library缓存已刷新")
-                except Exception as cache_error:
-                    logger.warning(f"⚠️ Library缓存刷新失败: {cache_error}")
+                # 库缓存刷新已移除，改为直接调用/library/search接口
             else:
                 error_msg = response.get('message', '未知错误') if response else '请求失败'
                 logger.error(f"❌ 电影导入失败 ({provider_type.upper()}: {provider_id}): {error_msg}")
@@ -1248,14 +1227,9 @@ class WebhookHandler:
                 if failed_count > 0:
                     logger.warning(f"⚠️ {failed_count} 集导入失败，请检查日志")
                 
-                # 如果有成功导入的集数，刷新library缓存
+                # 库缓存刷新已移除，改为直接调用/library/search接口
                 if success_count > 0:
-                    try:
-                        from handlers.import_url import refresh_library_cache
-                        await refresh_library_cache()
-                        logger.info("✅ Library缓存已刷新")
-                    except Exception as cache_error:
-                        logger.warning(f"⚠️ Library缓存刷新失败: {cache_error}")
+                    logger.info("✅ 集数导入完成")
                     
         except Exception as e:
             logger.error(f"❌ 导入集数异常: {e}", exc_info=True)
