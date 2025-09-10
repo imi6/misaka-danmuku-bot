@@ -12,6 +12,7 @@ from handlers.import_url import search_video_by_keyword
 from utils.tmdb_api import get_tmdb_media_details, search_tv_series_by_name_year, validate_tv_series_match
 from utils.api import call_danmaku_api
 from utils.security import mask_sensitive_data
+from utils.emby_name_converter import convert_emby_series_name
 
 logger = logging.getLogger(__name__)
 
@@ -210,6 +211,19 @@ class WebhookHandler:
                 # 移除常见的无用后缀
                 series_name = re.sub(r'\s*\(\d{4}\)\s*$', '', series_name)  # 移除年份括号
                 series_name = re.sub(r'\s*-\s*Season\s+\d+\s*$', '', series_name, flags=re.IGNORECASE)  # 移除季度后缀
+            
+            # 应用名称转换映射（如果是剧集且有必要信息）
+            if media_type == 'Episode' and series_name and season_number:
+                try:
+                    converted_result = convert_emby_series_name(series_name, season_number)
+                    if converted_result:
+                        logger.info(f"🔄 名称转换成功: '{series_name}' S{season_number:02d} -> '{converted_result['series_name']}' S{converted_result['season_number']:02d}")
+                        series_name = converted_result['series_name']
+                        season_number = converted_result['season_number']
+                    else:
+                        logger.debug(f"📝 未找到名称转换规则: '{series_name}' S{season_number:02d}")
+                except Exception as e:
+                    logger.warning(f"⚠️ 名称转换时发生错误: {e}，使用原始名称")
             
             # 提取Provider ID信息（Emby刮削后的元数据）
             provider_ids = item.get('ProviderIds', {})
