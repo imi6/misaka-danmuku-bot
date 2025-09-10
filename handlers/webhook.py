@@ -379,7 +379,7 @@ class WebhookHandler:
                 # 未找到精确匹配：使用优先级 provider ID 自动导入电影
                 if provider_id:
                     logger.info(f"📥 未找到匹配的电影，开始自动导入: {movie_title} ({year}) 使用 {provider_type.upper()} ID")
-                    await self._import_movie_by_provider(provider_id, provider_type)
+                    await self._import_movie_by_provider(provider_id, provider_type, movie_title)
                 else:
                     logger.warning(f"⚠️ 无法导入电影，缺少有效的 provider ID: {movie_title}")
             else:
@@ -670,7 +670,7 @@ class WebhookHandler:
             if provider_id and provider_type:
                 logger.info(f"📥 使用优先级provider进行导入: {title} ({provider_type.upper()}: {provider_id})")
                 if media_type == 'movie':
-                    await self._import_movie_by_provider(provider_id, provider_type)
+                    await self._import_movie_by_provider(provider_id, provider_type, title)
                     return
                 elif media_type == 'tv':
                     await self._import_episodes_by_provider(provider_id, provider_type, season, None, title)
@@ -1013,12 +1013,13 @@ class WebhookHandler:
         except Exception as e:
             logger.error(f"❌ 导入电影时发生错误 (TMDB: {tmdb_id}): {e}", exc_info=True)
     
-    async def _import_movie_by_provider(self, provider_id: str, provider_type: str = 'tmdb'):
+    async def _import_movie_by_provider(self, provider_id: str, provider_type: str = 'tmdb', movie_title: str = None):
         """使用优先级 provider 导入单个电影
         
         Args:
             provider_id: Provider ID (tmdb_id, tvdb_id, imdb_id, douban_id, 或 bangumi_id)
-        provider_type: Provider 类型 ('tmdb', 'tvdb', 'imdb', 'douban', 'bangumi')
+            provider_type: Provider 类型 ('tmdb', 'tvdb', 'imdb', 'douban', 'bangumi')
+            movie_title: 电影标题（可选，用于通知显示）
         """
         try:
             logger.info(f"📥 开始导入电影 ({provider_type.upper()}: {provider_id})")
@@ -1033,11 +1034,15 @@ class WebhookHandler:
             
             # 构建媒体信息用于回调通知
             media_info = {
-                'Name': f"{provider_type.upper()} {provider_id}",
+                'Name': movie_title if movie_title else f"{provider_type.upper()} {provider_id}",
                 'Type': 'Movie',
                 'ProviderId': provider_id,
                 'ProviderType': provider_type
             }
+            
+            # 如果有电影标题，添加到媒体信息中
+            if movie_title:
+                media_info['MovieTitle'] = movie_title
             
             if response and response.get('success'):
                 logger.info(f"✅ 电影导入成功 ({provider_type.upper()}: {provider_id})")
