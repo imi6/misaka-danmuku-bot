@@ -27,18 +27,20 @@ on:
       - ".github/workflows/docker-build.yml"
   release:
     types: [published] # 当创建新release时触发
-  workflow_dispatch: # 允许手动触发
+  workflow_dispatch:
     inputs:
       push_image:
-        description: '是否推送镜像到仓库'
-        required: false
-        default: 'true'
+        description: "推送镜像"
+        default: true
         type: boolean
-      platforms:
-        description: '构建平台'
-        required: false
-        default: 'linux/amd64,linux/arm64'
-        type: string
+      no_cache:
+        description: "禁用缓存"
+        default: false
+        type: boolean
+      debug_build:
+        description: "调试模式"
+        default: false
+        type: boolean
 
 # 环境变量
 env:
@@ -54,7 +56,7 @@ concurrency:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest # 使用Ubuntu runner（支持多架构构建）
-    timeout-minutes: 30 # 设置超时时间
+    timeout-minutes: 30
 
     # 权限配置（推送镜像需要的权限）
     permissions:
@@ -77,29 +79,19 @@ jobs:
         with:
           platforms: all
 
-      # 步骤3：设置Docker构建环境（支持多架构）
+      # 步骤3：环境准备
+      - name: 环境准备
+        run: |
+          docker system prune -f || true
+          docker builder prune -f || true
+
+      # 步骤4：设置Docker Buildx
       - name: 设置Docker Buildx
         uses: docker/setup-buildx-action@v3
-        with:
-          version: latest
-          driver-opts: |
-            network=host
-          buildkitd-flags: |
-            --allow-insecure-entitlement security.insecure
-            --allow-insecure-entitlement network.host
 
-      # 步骤4：登录Docker Hub（如需推送到Docker Hub，取消注释并配置 secrets）
-      # - name: 登录Docker Hub
-      #   if: github.event_name != 'pull_request' && (github.event.inputs.push_image == 'true' || github.event.inputs.push_image == '')
-      #   uses: docker/login-action@v3
-      #   with:
-      #     registry: docker.io
-      #     username: ${{ secrets.DOCKER_HUB_USERNAME }}
-      #     password: ${{ secrets.DOCKER_HUB_TOKEN }}
-
-      # 步骤5：登录GitHub Container Registry（GHCR）
+      # 步骤5：登录GHCR
       - name: 登录GHCR
-        if: github.event_name != 'pull_request' && (github.event_name == 'release' || github.event.inputs.push_image == 'true' || github.event.inputs.push_image == '')
+        if: github.event_name != 'pull_request' && github.event.inputs.push_image
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -131,55 +123,41 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.licenses=MIT
 
-      # 步骤7：构建并推送镜像（支持多架构：amd64/arm64）
+      # 步骤7：构建并推送镜像
       - name: 构建并推送镜像
         id: build
+        timeout-minutes: 25
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile
-          platforms: ${{ github.event.inputs.platforms || 'linux/amd64,linux/arm64' }}
-          push: ${{ github.event_name != 'pull_request' && (github.event_name == 'release' || github.event.inputs.push_image == 'true' || github.event.inputs.push_image == '') }}
+          platforms: ${{ github.event.inputs.no_cache && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
+          push: ${{ github.event_name != 'pull_request' && github.event.inputs.push_image }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: |
-            type=gha,scope=${{ github.workflow }}
-            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache
-          cache-to: |
-            type=gha,scope=${{ github.workflow }},mode=max
-            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache,mode=max
-          build-args: |
-            BUILDKIT_INLINE_CACHE=1
-          provenance: true
-          sbom: true
+          no-cache: ${{ github.event.inputs.no_cache }}
+          cache-from: ${{ !github.event.inputs.no_cache && 'type=gha' || '' }}
+          cache-to: ${{ !github.event.inputs.no_cache && 'type=gha,mode=max' || '' }}
+          pull: true
+          provenance: false
 
-      # 步骤8：镜像安全扫描
-      - name: 镜像安全扫描
-        if: github.event_name != 'pull_request'
-        uses: aquasecurity/trivy-action@master
+      # 步骤8：构建重试
+      - name: 构建重试
+        if: failure() && steps.build.outcome == 'failure'
+        uses: docker/build-push-action@v5
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
-          format: 'sarif'
-          output: 'trivy-results.sarif'
+          context: .
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' && github.event.inputs.push_image }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          no-cache: true
+          pull: true
+          provenance: false
 
-      # 步骤9：上传安全扫描结果
-      - name: 上传安全扫描结果
-        if: github.event_name != 'pull_request'
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: 'trivy-results.sarif'
-
-      # 步骤10：输出构建信息
+      # 步骤9：输出构建信息
       - name: 输出构建信息
-        if: steps.build.outcome == 'success'
+        if: success()
         run: |
-          echo "## 🚀 构建成功!" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**镜像标签:**" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**镜像摘要:** ${{ steps.build.outputs.digest }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**支持平台:** ${{ github.event.inputs.platforms || 'linux/amd64,linux/arm64' }}" >> $GITHUB_STEP_SUMMARY
+          echo "✅ 构建成功: ${{ steps.meta.outputs.tags }}"
+          echo "🔗 摘要: ${{ steps.build.outputs.digest }}"

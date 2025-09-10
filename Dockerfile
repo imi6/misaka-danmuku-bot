@@ -6,16 +6,14 @@ FROM python:3.13-slim AS builder
 # 设置工作目录
 WORKDIR /app
 
-# 安装系统依赖（用于编译可能的C扩展）
+# 安装系统依赖和升级pip（合并减少层数）
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libc6-dev \
     pkg-config \
     && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
-
-# 升级pip和安装构建工具
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+    && apt-get clean \
+    && pip install --no-cache-dir --upgrade pip setuptools wheel
 
 # 复制依赖清单
 COPY requirements.txt .
@@ -29,16 +27,14 @@ RUN pip wheel --no-cache-dir --no-deps --wheel-dir /app/wheels -r requirements.t
 # ==============================
 FROM python:3.13-slim
 
-# 安装运行时必要的系统依赖
+# 安装运行时依赖、创建用户和设置权限（合并减少层数）
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     procps \
     && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
-
-# 安全配置：创建非root用户运行服务（避免权限过高）
-RUN groupadd -r botgroup --gid=1000 && \
-    useradd -r -g botgroup --uid=1000 --home-dir=/app --shell=/bin/bash botuser
+    && apt-get clean \
+    && groupadd -r botgroup --gid=1000 \
+    && useradd -r -g botgroup --uid=1000 --home-dir=/app --shell=/bin/bash botuser
 
 # 设置工作目录并设置正确的权限
 WORKDIR /app
@@ -48,25 +44,19 @@ RUN chown -R botuser:botgroup /app
 COPY --from=builder /app/wheels /wheels
 COPY --from=builder /app/requirements.txt .
 
-# 升级pip并安装依赖（无需再次编译，速度更快）
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir /wheels/* && \
-    rm -rf /wheels ~/.cache/pip
+# 升级pip、安装依赖和创建目录结构（合并减少层数）
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir /wheels/* \
+    && rm -rf /wheels ~/.cache/pip \
+    && mkdir -p /app/app/config /app/app/logs \
+    && chown -R botuser:botgroup /app/app
 
-# 创建应用程序目录结构（用于数据持久化）
-RUN mkdir -p /app/app/config /app/app/logs && \
-    chown -R botuser:botgroup /app/app
-
-# 复制项目代码（复制所有必要文件）
-COPY --chown=botuser:botgroup bot.py .
-COPY --chown=botuser:botgroup config.py .
-COPY --chown=botuser:botgroup webhook_server.py .
-COPY --chown=botuser:botgroup handlers/ ./handlers/
-COPY --chown=botuser:botgroup callback/ ./callback/
-COPY --chown=botuser:botgroup utils/ ./utils/
-
-# 复制app目录结构（包含.gitkeep文件）
+# 复制项目代码（合并COPY指令减少层数，变动频繁的文件放在最后）
 COPY --chown=botuser:botgroup app/ ./app/
+COPY --chown=botuser:botgroup utils/ ./utils/
+COPY --chown=botuser:botgroup callback/ ./callback/
+COPY --chown=botuser:botgroup handlers/ ./handlers/
+COPY --chown=botuser:botgroup config.py webhook_server.py bot.py ./
 
 # 配置环境变量（默认值，可通过docker run或compose覆盖）
 ENV PYTHONUNBUFFERED=1 \
