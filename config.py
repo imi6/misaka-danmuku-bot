@@ -269,7 +269,12 @@ class WebhookConfig:
     enabled: bool = False
     play_event_cooldown_hours: int = 1  # 播放事件冷却时间（固定1小时），避免重复处理
     
+    # 回调通知配置
+    callback_enabled: bool = True  # 回调通知开关，默认启用
+    callback_chat_id: str = ""  # 回调通知目标聊天ID
+    
     def __post_init__(self):
+        """初始化后验证配置"""
         if not self.api_key or not self.api_key.strip():
             if not ConfigManager._initialization_logged:
                 logger.info("ℹ️ 未配置 WEBHOOK_API_KEY，webhook功能将被禁用")
@@ -291,6 +296,37 @@ class WebhookConfig:
         self.enabled = True
         if not ConfigManager._initialization_logged:
             logger.info(f"✅ Webhook配置已启用，监听端口: {self.port}")
+    
+    def validate_callback_with_admin_ids(self, admin_user_ids: List[int] = None):
+        """使用管理员ID验证回调配置
+        
+        Args:
+            admin_user_ids: 管理员用户ID列表
+        """
+        self._validate_callback_config(admin_user_ids)
+        if self.callback_enabled and not ConfigManager._initialization_logged:
+            logger.info(f"✅ 回调通知已启用，目标聊天ID: {mask_sensitive_data(self.callback_chat_id)}")
+    
+    def _validate_callback_config(self, admin_user_ids: List[int] = None):
+        """验证回调通知配置
+        
+        Args:
+            admin_user_ids: 管理员用户ID列表，用于自动设置默认回调聊天ID
+        """
+        # 如果没有配置callback_chat_id或为占位符，尝试使用第一个管理员ID
+        placeholder_chat_ids = ['your_chat_id_here', 'YOUR_CHAT_ID', 'placeholder', '']
+        if not self.callback_chat_id or self.callback_chat_id.strip() in placeholder_chat_ids:
+            if admin_user_ids and len(admin_user_ids) > 0:
+                self.callback_chat_id = str(admin_user_ids[0])
+                if not ConfigManager._initialization_logged:
+                    logger.info(f"ℹ️ 未配置CALLBACK_CHAT_ID，自动使用第一个管理员ID: {admin_user_ids[0]}")
+            else:
+                if not ConfigManager._initialization_logged:
+                    logger.info("ℹ️ 未配置回调通知参数且无管理员配置，回调通知功能将被禁用")
+                self.callback_enabled = False
+                return
+            
+        self.callback_enabled = True
 
 
 @dataclass
@@ -551,8 +587,13 @@ class ConfigManager:
             # 加载Webhook配置
             self._webhook = WebhookConfig(
                 port=int(os.getenv("WEBHOOK_PORT", 7769)),
-                api_key=os.getenv("WEBHOOK_API_KEY", "")
+                api_key=os.getenv("WEBHOOK_API_KEY", ""),
+                callback_enabled=os.getenv("WEBHOOK_CALLBACK_ENABLED", "true").lower() in ['true', '1', 'yes'],
+                callback_chat_id=os.getenv("WEBHOOK_CALLBACK_CHAT_ID", "")
             )
+            
+            # 验证回调通知配置（需要在telegram配置加载后）
+            self._webhook.validate_callback_with_admin_ids(self._telegram.admin_user_ids)
             
             # 加载代理配置
             self._proxy = ProxyConfig()

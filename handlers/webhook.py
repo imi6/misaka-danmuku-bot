@@ -1,6 +1,7 @@
 import logging
 import json
 import os
+import asyncio
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -1029,13 +1030,27 @@ class WebhookHandler:
             
             response = call_danmaku_api('POST', '/import/auto', params=import_params)
             
+            # 构建媒体信息用于回调通知
+            media_info = {
+                'Name': f"{provider_type.upper()} {provider_id}",
+                'Type': 'Movie',
+                'ProviderId': provider_id,
+                'ProviderType': provider_type
+            }
+            
             if response and response.get('success'):
                 logger.info(f"✅ 电影导入成功 ({provider_type.upper()}: {provider_id})")
+                
+                # 发送成功回调通知
+                await self._send_callback_notification('import', media_info, 'success')
                 
                 # 库缓存刷新已移除，改为直接调用/library/search接口
             else:
                 error_msg = response.get('message', '未知错误') if response else '请求失败'
                 logger.error(f"❌ 电影导入失败 ({provider_type.upper()}: {provider_id}): {error_msg}")
+                
+                # 发送失败回调通知
+                await self._send_callback_notification('import', media_info, 'failed', error_msg)
                 
         except Exception as e:
             logger.error(f"❌ 导入电影时发生错误 ({provider_type.upper()}: {provider_id}): {e}", exc_info=True)
@@ -1104,11 +1119,25 @@ class WebhookHandler:
                 endpoint=f"/library/episode/{episode_id}/refresh"
             )
             
+            # 构建媒体信息用于回调通知
+            media_info = {
+                'Name': f"源ID {source_id}",
+                'Type': 'Movie',
+                'SourceId': source_id,
+                'EpisodeId': episode_id
+            }
+            
             if response and response.get('success'):
                 logger.info(f"✅ 电影刷新成功 (源ID: {source_id})")
+                
+                # 发送成功回调通知
+                await self._send_callback_notification('refresh', media_info, 'success')
             else:
                 error_msg = response.get('message', '未知错误') if response else '请求失败'
                 logger.error(f"❌ 电影刷新失败 (源ID: {source_id}): {error_msg}")
+                
+                # 发送失败回调通知
+                await self._send_callback_notification('refresh', media_info, 'failed', error_msg)
                 
         except Exception as e:
             logger.error(f"❌ 刷新电影时发生错误 (源ID: {source_id}): {e}", exc_info=True)
@@ -1227,6 +1256,30 @@ class WebhookHandler:
                 if failed_count > 0:
                     logger.warning(f"⚠️ {failed_count} 集导入失败，请检查日志")
                 
+                # 构建媒体信息用于回调通知
+                media_info = {
+                    'Name': f"{provider_type.upper()} {provider_id} S{season}",
+                    'Type': 'Series',
+                    'ProviderId': provider_id,
+                    'ProviderType': provider_type,
+                    'Season': season,
+                    'Episodes': episodes,
+                    'SuccessCount': success_count,
+                    'FailedCount': failed_count,
+                    'TotalCount': total_episodes
+                }
+                
+                # 发送回调通知
+                if success_count > 0 and failed_count == 0:
+                    # 全部成功
+                    await self._send_callback_notification('import', media_info, 'success')
+                elif success_count > 0 and failed_count > 0:
+                    # 部分成功
+                    await self._send_callback_notification('import', media_info, 'success', f"{failed_count} 集导入失败")
+                else:
+                    # 全部失败
+                    await self._send_callback_notification('import', media_info, 'failed', "所有集数导入失败")
+                
                 # 库缓存刷新已移除，改为直接调用/library/search接口
                 if success_count > 0:
                     logger.info("✅ 集数导入完成")
@@ -1313,6 +1366,10 @@ class WebhookHandler:
                         'fetchedAt': ep.get('fetchedAt')
                     }
             
+            success_count = 0
+            failed_count = 0
+            skipped_count = 0
+            
             for episode in episodes:
                 episode_info = episode_map.get(episode)
                 if not episode_info:
@@ -1356,6 +1413,7 @@ class WebhookHandler:
                         
                         if time_diff < timedelta(hours=24):
                             logger.info(f"⏰ 第{episode}集入库时间在24小时内 ({time_diff}），跳过刷新 [时区: {self.timezone}]")
+                            skipped_count += 1
                             continue
                         else:
                             logger.info(f"⏰ 第{episode}集入库时间超过24小时 ({time_diff}），执行刷新 [时区: {self.timezone}]")
@@ -1374,8 +1432,48 @@ class WebhookHandler:
                 
                 if response and response.get("success"):
                     logger.info(f"✅ 集数刷新成功: E{episode:02d}")
+                    success_count += 1
                 else:
                     logger.warning(f"⚠️ 集数刷新失败: E{episode:02d}")
+                    failed_count += 1
+            
+            # 构建媒体信息用于回调通知
+            total_episodes = len(episodes)
+            processed_episodes = success_count + failed_count
+            
+            if processed_episodes > 0:
+                media_info = {
+                    'Name': f"源ID {source_id} S{season_num}",
+                    'Type': 'Series',
+                    'SourceId': source_id,
+                    'Season': season_num,
+                    'Episodes': episodes,
+                    'SuccessCount': success_count,
+                    'FailedCount': failed_count,
+                    'SkippedCount': skipped_count,
+                    'TotalCount': total_episodes
+                }
+                
+                # 添加剧集名称和TMDB ID（如果有）
+                if series_name:
+                    media_info['SeriesName'] = series_name
+                if tmdb_id:
+                    media_info['TmdbId'] = tmdb_id
+                if year:
+                    media_info['Year'] = year
+                
+                # 发送回调通知
+                if success_count > 0 and failed_count == 0:
+                    # 全部成功
+                    await self._send_callback_notification('refresh', media_info, 'success')
+                elif success_count > 0 and failed_count > 0:
+                    # 部分成功
+                    await self._send_callback_notification('refresh', media_info, 'success', f"{failed_count} 集刷新失败")
+                elif failed_count > 0:
+                    # 全部失败
+                    await self._send_callback_notification('refresh', media_info, 'failed', "所有集数刷新失败")
+                
+                logger.info(f"📊 刷新完成: 成功 {success_count}/{processed_episodes} 集，跳过 {skipped_count} 集")
                     
         except Exception as e:
             logger.error(f"❌ 刷新集数异常: {e}")
@@ -1415,6 +1513,129 @@ class WebhookHandler:
                 
         except Exception as e:
             logger.error(f"❌ 导入单集异常: {e}")
+    
+    async def _send_callback_notification(self, operation_type: str, media_info: Dict[str, Any], result: str = "success", error_msg: str = None):
+        """发送回调通知
+        
+        Args:
+            operation_type: 操作类型 (import/refresh)
+            media_info: 媒体信息
+            result: 操作结果 (success/failed)
+            error_msg: 错误信息（可选）
+        """
+        try:
+            # 检查回调通知是否启用
+            if not self.config.webhook.callback_enabled:
+                return
+            
+            # 只发送成功的通知
+            if result != "success":
+                return
+            
+            # 检查配置是否有效
+            if not self.config.webhook.callback_chat_id:
+                logger.warning("⚠️ 回调通知聊天ID未配置，跳过发送")
+                return
+            
+            # 使用现有的TELEGRAM_BOT_TOKEN创建Bot实例
+            callback_bot = Bot(token=self.config.telegram_bot_token)
+            
+            # 构建通知消息
+            timestamp = datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d %H:%M:%S")
+            
+            # 获取媒体基本信息
+            media_name = media_info.get('Name', '未知')
+            media_type = "电影" if media_info.get('Type') == 'Movie' else "剧集"
+            
+            # 构建状态图标和描述
+            if result == "success":
+                status_icon = "✅"
+                status_text = "成功"
+            else:
+                status_icon = "❌"
+                status_text = "失败"
+            
+            # 构建操作类型描述
+            operation_text = "导入" if operation_type == "import" else "刷新"
+            
+            # 构建通知消息
+            message_lines = [
+                f"🎬 **Webhook {operation_text}通知**",
+                f"",
+                f"📺 **媒体信息**",
+                f"• 名称: {media_name}",
+                f"• 类型: {media_type}",
+                f"• 操作: {operation_text}",
+                f"• 状态: {status_icon} {status_text}",
+                f"• 时间: {timestamp}"
+            ]
+            
+            # 添加剧集特有信息
+            if media_info.get('Type') == 'Series':
+                if media_info.get('Season'):
+                    message_lines.insert(-1, f"• 季度: S{media_info.get('Season')}")
+                
+                # 添加统计信息
+                success_count = media_info.get('SuccessCount', 0)
+                failed_count = media_info.get('FailedCount', 0)
+                total_count = media_info.get('TotalCount', 0)
+                skipped_count = media_info.get('SkippedCount', 0)
+                
+                if total_count > 0:
+                    stats_parts = []
+                    if success_count > 0:
+                        stats_parts.append(f"成功{success_count}集")
+                    if failed_count > 0:
+                        stats_parts.append(f"失败{failed_count}集")
+                    if skipped_count > 0:
+                        stats_parts.append(f"跳过{skipped_count}集")
+                    
+                    if stats_parts:
+                        message_lines.insert(-1, f"• 统计: {' / '.join(stats_parts)} (共{total_count}集)")
+            
+            # 添加Provider信息
+            if media_info.get('ProviderType') and media_info.get('ProviderId'):
+                message_lines.insert(-1, f"• Provider: {media_info.get('ProviderType').upper()} {media_info.get('ProviderId')}")
+            elif media_info.get('SourceId'):
+                message_lines.insert(-1, f"• 源ID: {media_info.get('SourceId')}")
+            
+            # 如果有错误信息，添加到消息中
+            if error_msg:
+                message_lines.extend([
+                    f"",
+                    f"❌ **错误信息**",
+                    f"```",
+                    f"{error_msg}",
+                    f"```"
+                ])
+            
+            # 添加媒体详细信息
+            if media_info.get('Year'):
+                message_lines.insert(-2, f"• 年份: {media_info.get('Year')}")
+            
+            if media_info.get('Overview'):
+                overview = media_info.get('Overview', '')[:100]
+                if len(media_info.get('Overview', '')) > 100:
+                    overview += "..."
+                message_lines.extend([
+                    f"",
+                    f"📝 **简介**",
+                    f"{overview}"
+                ])
+            
+            message = "\n".join(message_lines)
+            
+            # 发送通知
+            await callback_bot.send_message(
+                chat_id=self.config.webhook.callback_chat_id,
+                text=message,
+                parse_mode='Markdown'
+            )
+            
+            logger.info(f"📤 回调通知发送成功: {operation_text} {media_name}")
+            
+        except Exception as e:
+            logger.error(f"❌ 发送回调通知失败: {e}")
 
 
 # 全局webhook处理器实例
