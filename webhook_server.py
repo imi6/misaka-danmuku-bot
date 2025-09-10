@@ -70,13 +70,13 @@ class WebhookServer:
             
             self.site = web.TCPSite(
                 self.runner, 
-                '127.0.0.1', 
+                '0.0.0.0', 
                 config.webhook.port
             )
             await self.site.start()
             
-            logger.info(f"🔌 Webhook server started on http://127.0.0.1:{config.webhook.port}")
-            logger.info(f"🔗 Emby webhook URL: http://127.0.0.1:{config.webhook.port}/api/webhook/emby?api_key={mask_sensitive_data(config.webhook.api_key)}")
+            logger.info(f"🔌 Webhook server started on http://0.0.0.0:{config.webhook.port}")
+            logger.info(f"🔗 Local webhook URL: http://127.0.0.1:{config.webhook.port}/api/webhook/emby?api_key={mask_sensitive_data(config.webhook.api_key)}")
             
         except Exception as e:
             logger.error(f"❌ Failed to start webhook server: {e}", exc_info=True)
