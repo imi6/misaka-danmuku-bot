@@ -312,89 +312,6 @@ async def import_auto_season_selection(update: Update, context: ContextTypes.DEF
         logger.error(f"❌ 无效选择消息发送失败: {invalid_error}")
     return ConversationHandler.END
 
-
-async def call_import_auto_api_with_query(query, context: ContextTypes.DEFAULT_TYPE, import_params: dict):
-    """使用callback query调用导入API"""
-    logger.info(f"🔧 call_import_auto_api_with_query 开始执行，参数: {import_params}")
-    
-    try:
-        # 构建API请求参数
-        api_params = {
-            "searchType": import_params.get("searchType", "tmdb"),
-            "searchTerm": import_params.get("searchTerm", ""),
-            "mediaType": import_params.get("mediaType", "tv_series"),
-            "importMethod": import_params.get("importMethod", "auto")
-        }
-        
-        # 如果有季度信息，添加到参数中
-        if "season" in import_params:
-            api_params["season"] = import_params["season"]
-            logger.info(f"📺 添加季度参数: season={import_params['season']}")
-        
-        logger.info(f"🚀 开始调用导入API，完整参数: {api_params}")
-        
-        # 调用API
-        response = call_danmaku_api(
-            method="POST",
-            endpoint="/import/auto",
-            params=api_params
-        )
-        
-        logger.info(f"📡 API响应: {response}")
-        
-        # 处理API响应
-        if response and response.get("success"):
-            message = f"✅ **导入成功!**\n\n{response.get('message', '导入完成')}"
-            if "data" in response and response["data"]:
-                data = response["data"]
-                if "imported_count" in data:
-                    message += f"\n📊 导入数量: {data['imported_count']}"
-            logger.info(f"✅ 导入成功，消息: {message}")
-        else:
-            error_msg = response.get("message", "未知错误") if response else "API调用失败"
-            message = f"❌ **导入失败**\n\n{error_msg}"
-            logger.error(f"❌ 导入失败，错误: {error_msg}")
-        
-        # 发送结果消息
-        try:
-            await query.edit_message_text(message, parse_mode="Markdown")
-            logger.info(f"📤 消息发送成功")
-        except Exception as msg_error:
-            logger.error(f"❌ 消息发送失败: {msg_error}")
-            # 如果编辑消息失败，尝试发送新消息
-            try:
-                await context.bot.send_message(
-                    chat_id=query.message.chat_id,
-                    text=message,
-                    parse_mode="Markdown"
-                )
-                logger.info(f"📤 新消息发送成功")
-            except Exception as new_msg_error:
-                logger.error(f"❌ 新消息发送也失败: {new_msg_error}")
-        
-    except Exception as e:
-        logger.error(f"❌ call_import_auto_api_with_query 执行异常: {e}")
-        try:
-            await query.edit_message_text(
-                f"❌ **系统错误**\n\n{str(e)}",
-                parse_mode="Markdown"
-            )
-        except Exception as error_msg_error:
-            logger.error(f"❌ 错误消息发送失败: {error_msg_error}")
-            try:
-                await context.bot.send_message(
-                    chat_id=query.message.chat_id,
-                    text=f"❌ **系统错误**\n\n{str(e)}",
-                    parse_mode="Markdown"
-                )
-            except Exception as final_error:
-                logger.error(f"❌ 最终错误消息发送失败: {final_error}")
-    
-    # 清理用户数据
-    context.user_data.pop("import_auto_params", None)
-    context.user_data.pop("selected_season", None)
-
-
 async def process_auto_input(update: Update, context: ContextTypes.DEFAULT_TYPE, input_text: str):
     """处理自动导入输入"""
     # 验证域名
@@ -2140,55 +2057,8 @@ async def call_import_auto_api(update: Update, context: ContextTypes.DEFAULT_TYP
     if api_result["success"]:
         success_message = f"✅ 导入成功！"
         
-        # 根据导入方式提供继续导入的按钮
-        import_method = params.get("importMethod")
-        if import_method in ["season", "episode"]:
-            keyboard = []
-            
-            if import_method == "season":
-                # 分季导入：提供导入其他季度的选项
-                keyboard.append([
-                    InlineKeyboardButton(
-                        "📺 导入其他季度",
-                        callback_data=json.dumps({
-                            "action": "continue_season_import"
-                        }, ensure_ascii=False)
-                    )
-                ])
-            elif import_method == "episode":
-                # 分集导入：提供导入同季其他集数或其他季度的选项
-                keyboard.extend([
-                    [InlineKeyboardButton(
-                        "🎬 导入同季其他集数",
-                        callback_data=json.dumps({
-                            "action": "continue_episode_import",
-                            "same_season": True
-                        }, ensure_ascii=False)
-                    )],
-                    [InlineKeyboardButton(
-                        "📺 导入其他季度",
-                        callback_data=json.dumps({
-                            "action": "continue_episode_import",
-                            "same_season": False
-                        }, ensure_ascii=False)
-                    )]
-                ])
-            
-            # 添加结束按钮
-            keyboard.append([
-                InlineKeyboardButton(
-                    "✅ 完成导入",
-                    callback_data=json.dumps({
-                        "action": "finish_import"
-                    }, ensure_ascii=False)
-                )
-            ])
-            
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await send_message_with_markup(success_message, reply_markup)
-        else:
-            # 自动导入：直接显示成功消息
-            await send_message(success_message)
+        # 直接显示成功消息，不提供继续导入按钮
+        await send_message(success_message)
     else:
         await send_message(f"❌ 导入失败：{api_result['error']}")
 
