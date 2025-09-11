@@ -282,6 +282,18 @@ async def import_auto_season_selection(update: Update, context: ContextTypes.DEF
                 logger.debug(f"🔍 跳过识别词匹配检查 - 原始关键词: {original_keyword}, 搜索类型: {search_type}")
             
             import_params["season"] = season_number
+            import_params["importMethod"] = "auto"  # 添加导入方式参数
+            
+            # 确保originalKeyword参数存在，用于识别词匹配
+            if "originalKeyword" not in import_params:
+                # 从上下文中获取原始关键词
+                original_keyword_from_context = context.user_data.get("import_auto_keyword", "")
+                if original_keyword_from_context:
+                    import_params["originalKeyword"] = original_keyword_from_context
+                else:
+                    # 如果上下文中也没有，使用searchTerm作为备选
+                    import_params["originalKeyword"] = import_params.get("searchTerm", "")
+            
             logger.info(f"📋 添加季度后的导入参数: {import_params}")
             
             # 调用导入API
@@ -338,9 +350,18 @@ async def process_auto_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
         # 第二步：尝试获取并显示详细信息
         await update.message.reply_text("🔍 正在获取TMDB媒体信息...")
         
+        # 尝试获取TMDB标题作为originalKeyword
+        original_keyword = None
         try:
             detailed_info = format_tmdb_media_info(tmdb_id, media_type)
             await update.message.reply_text(detailed_info)
+            
+            # 从TMDB获取标题作为originalKeyword
+            from utils.tmdb_api import get_tmdb_media_details
+            media_details = get_tmdb_media_details(tmdb_id, media_type)
+            if media_details:
+                original_keyword = media_details.get('title') or media_details.get('name')
+                
         except Exception as e:
             logger.warning(f"TMDB信息解析失败，直接使用ID导入: {e}")
             await update.message.reply_text(
@@ -349,13 +370,18 @@ async def process_auto_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
                 f"🔄 跳过详细信息获取，直接进行导入..."
             )
         
+        # 如果无法获取标题，使用TMDB ID作为fallback
+        if not original_keyword:
+            original_keyword = f"TMDB ID: {tmdb_id}"
+        
         if media_type == "movie":
             # 电影：直接导入
             import_params = {
                 "searchType": "tmdb",
                 "searchTerm": tmdb_id,
                 "mediaType": media_type,
-                "importMethod": "auto"
+                "importMethod": "auto",
+                "originalKeyword": original_keyword  # 添加原始关键词用于识别词匹配
             }
             await call_import_auto_api(update, context, import_params)
             return ConversationHandler.END
@@ -368,7 +394,8 @@ async def process_auto_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
             return await show_import_options(update, context, {
                 "searchType": "tmdb",
                 "searchTerm": tmdb_id,
-                "mediaType": media_type
+                "mediaType": media_type,
+                "originalKeyword": original_keyword  # 添加原始关键词用于识别词匹配
             })
     
     elif input_info["type"] == "tvdb_url":
@@ -443,7 +470,8 @@ async def process_auto_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
                     "searchType": "tvdb",
                     "searchTerm": tvdb_id,
                     "mediaType": media_type,
-                    "importMethod": "auto"
+                    "importMethod": "auto",
+                    "originalKeyword": title  # 添加原始关键词用于识别词匹配
                 }
                 await call_import_auto_api(update, context, import_params)
                 return ConversationHandler.END
@@ -456,7 +484,8 @@ async def process_auto_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
                 return await show_import_options(update, context, {
                     "searchType": "tvdb",
                     "searchTerm": tvdb_id,
-                    "mediaType": media_type
+                    "mediaType": media_type,
+                    "originalKeyword": title  # 添加原始关键词用于识别词匹配
                 })
         else:
             await update.message.reply_text(f"❌ TVDB查询失败\n\n无法找到slug '{slug}' 对应的媒体信息，请检查链接是否正确。")
@@ -561,7 +590,8 @@ async def process_auto_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
                     "searchType": "douban",
                     "searchTerm": douban_id,
                     "mediaType": "tv",
-                    "importMethod": "auto"
+                    "importMethod": "auto",
+                    "originalKeyword": f"豆瓣ID: {douban_id}"  # 添加原始关键词用于识别词匹配
                 }
                 await call_import_auto_api(update, context, import_params)
                 return ConversationHandler.END
@@ -674,13 +704,21 @@ async def process_auto_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
                 return ConversationHandler.END
         
         # 处理导入逻辑
+        # 获取IMDB标题作为originalKeyword（如果之前获取成功的话）
+        original_keyword = None
+        if 'title' in locals():
+            original_keyword = title
+        else:
+            original_keyword = f"IMDB ID: {imdb_id}"
+            
         if media_type == "movie":
             # 电影：直接导入
             import_params = {
                 "searchType": "imdb",
                 "searchTerm": imdb_id,
                 "mediaType": media_type,
-                "importMethod": "auto"
+                "importMethod": "auto",
+                "originalKeyword": original_keyword  # 添加原始关键词用于识别词匹配
             }
             await call_import_auto_api(update, context, import_params)
             return ConversationHandler.END
@@ -693,7 +731,8 @@ async def process_auto_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
             return await show_import_options(update, context, {
                 "searchType": "imdb",
                 "searchTerm": imdb_id,
-                "mediaType": media_type
+                "mediaType": media_type,
+                "originalKeyword": original_keyword  # 添加原始关键词用于识别词匹配
             })
     
     elif input_info["type"] == "bgm_url":
@@ -811,7 +850,8 @@ async def process_auto_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
                 "searchType": "bangumi",
                 "searchTerm": bgm_id,
                 "mediaType": "tv_series",
-                "importMethod": "auto"
+                "importMethod": "auto",
+                "originalKeyword": f"BGM ID: {bgm_id}"  # 添加原始关键词用于识别词匹配
             }
             await call_import_auto_api(update, context, import_params)
             return ConversationHandler.END
@@ -855,7 +895,8 @@ async def process_auto_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
                     "searchType": "imdb",
                     "searchTerm": tt_id,
                     "mediaType": detected_type,
-                    "importMethod": "auto"
+                    "importMethod": "auto",
+                    "originalKeyword": title  # 添加原始关键词用于识别词匹配
                 }
                 await call_import_auto_api(update, context, import_params)
                 return ConversationHandler.END
@@ -876,7 +917,8 @@ async def process_auto_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
                     "searchType": "imdb",
                     "searchTerm": tt_id,
                     "mediaType": "tv_series",
-                    "importMethod": "auto"
+                    "importMethod": "auto",
+                    "originalKeyword": f"IMDB ID: {tt_id}"  # 添加原始关键词用于识别词匹配
                 }
                 await call_import_auto_api(update, context, import_params)
                 return ConversationHandler.END
@@ -897,7 +939,8 @@ async def process_auto_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
                 "searchType": "imdb",
                 "searchTerm": tt_id,
                 "mediaType": "tv_series",
-                "importMethod": "auto"
+                "importMethod": "auto",
+                "originalKeyword": f"IMDB ID: {tt_id}"  # 添加原始关键词用于识别词匹配
             }
             await call_import_auto_api(update, context, import_params)
             return ConversationHandler.END
@@ -1300,7 +1343,8 @@ async def import_auto_id_input(update: Update, context: ContextTypes.DEFAULT_TYP
                 "searchType": search_type,
                 "searchTerm": platform_id,
                 "mediaType": auto_detected_type,
-                "importMethod": "auto"
+                "importMethod": "auto",
+                "originalKeyword": f"{search_type.upper()} ID: {platform_id}"  # 添加原始关键词用于识别词匹配
             }
             await call_import_auto_api(update, context, import_params)
             return ConversationHandler.END
@@ -1309,7 +1353,8 @@ async def import_auto_id_input(update: Update, context: ContextTypes.DEFAULT_TYP
             context.user_data["import_auto_params"] = {
                 "searchType": search_type,
                 "searchTerm": platform_id,
-                "mediaType": auto_detected_type
+                "mediaType": auto_detected_type,
+                "originalKeyword": f"{search_type.upper()} ID: {platform_id}"  # 添加原始关键词用于识别词匹配
             }
             
             await show_import_options(update, context, context.user_data["import_auto_params"])
@@ -1356,7 +1401,8 @@ async def import_auto_id_input(update: Update, context: ContextTypes.DEFAULT_TYP
                         "searchType": search_type,
                         "searchTerm": imdb_id,
                         "mediaType": media_type,
-                        "importMethod": "auto"
+                        "importMethod": "auto",
+                        "originalKeyword": imdb_info.get('title', f"IMDB ID: {imdb_id}")  # 添加原始关键词用于识别词匹配
                     }
                     await call_import_auto_api(update, context, import_params)
                     return ConversationHandler.END
@@ -1365,7 +1411,8 @@ async def import_auto_id_input(update: Update, context: ContextTypes.DEFAULT_TYP
                     context.user_data["import_auto_params"] = {
                         "searchType": search_type,
                         "searchTerm": imdb_id,
-                        "mediaType": media_type
+                        "mediaType": media_type,
+                        "originalKeyword": imdb_info.get('title', f"IMDB ID: {imdb_id}")  # 添加原始关键词用于识别词匹配
                     }
                     
                     await show_import_options(update, context, context.user_data["import_auto_params"])
@@ -1439,7 +1486,8 @@ async def import_auto_id_input(update: Update, context: ContextTypes.DEFAULT_TYP
                         "searchType": search_type,
                         "searchTerm": bgm_id,
                         "mediaType": media_type,
-                        "importMethod": "auto"
+                        "importMethod": "auto",
+                        "originalKeyword": media_title  # 添加原始关键词用于识别词匹配
                     }
                     await call_import_auto_api(update, context, import_params)
                     return ConversationHandler.END
@@ -1448,7 +1496,8 @@ async def import_auto_id_input(update: Update, context: ContextTypes.DEFAULT_TYP
                     context.user_data["import_auto_params"] = {
                         "searchType": search_type,
                         "searchTerm": bgm_id,
-                        "mediaType": media_type
+                        "mediaType": media_type,
+                        "originalKeyword": media_title  # 添加原始关键词用于识别词匹配
                     }
                     
                     await show_import_options(update, context, context.user_data["import_auto_params"])
@@ -1542,7 +1591,8 @@ async def import_auto_id_input(update: Update, context: ContextTypes.DEFAULT_TYP
                         "searchType": search_type,
                         "searchTerm": douban_id,
                         "mediaType": auto_detected_type,
-                        "importMethod": "auto"
+                        "importMethod": "auto",
+                        "originalKeyword": media_title  # 添加原始关键词用于识别词匹配
                     }
                     await call_import_auto_api(update, context, import_params)
                     return ConversationHandler.END
@@ -1551,7 +1601,8 @@ async def import_auto_id_input(update: Update, context: ContextTypes.DEFAULT_TYP
                     context.user_data["import_auto_params"] = {
                         "searchType": search_type,
                         "searchTerm": douban_id,
-                        "mediaType": auto_detected_type
+                        "mediaType": auto_detected_type,
+                        "originalKeyword": media_title  # 添加原始关键词用于识别词匹配
                     }
                     
                     await show_import_options(update, context, context.user_data["import_auto_params"])
@@ -1628,7 +1679,8 @@ async def import_auto_id_input(update: Update, context: ContextTypes.DEFAULT_TYP
                         "searchType": search_type,
                         "searchTerm": bgm_id,
                         "mediaType": media_type,
-                        "importMethod": "auto"
+                        "importMethod": "auto",
+                        "originalKeyword": media_title  # 添加原始关键词用于识别词匹配
                     }
                     await call_import_auto_api(update, context, import_params)
                     return ConversationHandler.END
@@ -1637,7 +1689,8 @@ async def import_auto_id_input(update: Update, context: ContextTypes.DEFAULT_TYP
                     context.user_data["import_auto_params"] = {
                         "searchType": search_type,
                         "searchTerm": bgm_id,
-                        "mediaType": media_type
+                        "mediaType": media_type,
+                        "originalKeyword": media_title  # 添加原始关键词用于识别词匹配
                     }
                     
                     await show_import_options(update, context, context.user_data["import_auto_params"])
@@ -1736,7 +1789,8 @@ async def import_auto_id_input(update: Update, context: ContextTypes.DEFAULT_TYP
                     "searchType": search_type,
                     "searchTerm": platform_id,
                     "mediaType": auto_detected_type,
-                    "importMethod": "auto"
+                    "importMethod": "auto",
+                    "originalKeyword": tvdb_info.get('name', f"TVDB ID: {platform_id}")  # 添加原始关键词用于识别词匹配
                 }
                 await call_import_auto_api(update, context, import_params)
                 return ConversationHandler.END
@@ -1745,7 +1799,8 @@ async def import_auto_id_input(update: Update, context: ContextTypes.DEFAULT_TYP
                 context.user_data["import_auto_params"] = {
                     "searchType": search_type,
                     "searchTerm": platform_id,
-                    "mediaType": auto_detected_type
+                    "mediaType": auto_detected_type,
+                    "originalKeyword": tvdb_info.get('name', f"TVDB ID: {platform_id}")  # 添加原始关键词用于识别词匹配
                 }
                 
                 await show_import_options(update, context, context.user_data["import_auto_params"])
@@ -1807,7 +1862,8 @@ async def import_auto_id_input(update: Update, context: ContextTypes.DEFAULT_TYP
                             "searchType": search_type,
                             "searchTerm": platform_id,
                             "mediaType": media_type,
-                            "importMethod": "auto"
+                            "importMethod": "auto",
+                            "originalKeyword": f"BGM ID: {platform_id}"  # 添加原始关键词用于识别词匹配
                         }
                         await call_import_auto_api(update, context, import_params)
                         return ConversationHandler.END
@@ -1816,7 +1872,8 @@ async def import_auto_id_input(update: Update, context: ContextTypes.DEFAULT_TYP
                         context.user_data["import_auto_params"] = {
                             "searchType": search_type,
                             "searchTerm": platform_id,
-                            "mediaType": media_type
+                            "mediaType": media_type,
+                            "originalKeyword": f"BGM ID: {platform_id}"  # 添加原始关键词用于识别词匹配
                         }
                         
                         await show_import_options(update, context, context.user_data["import_auto_params"])
@@ -2045,6 +2102,7 @@ async def call_import_auto_api(update: Update, context: ContextTypes.DEFAULT_TYP
         send_message_with_markup = lambda text, markup: update.message.reply_text(text, reply_markup=markup)
     
     # 移除中间状态提示，直接调用API
+    logger.info(f"调用/import/auto API，参数: {params}")
     
     # 调用API
     api_result = call_danmaku_api(
@@ -2062,6 +2120,4 @@ async def call_import_auto_api(update: Update, context: ContextTypes.DEFAULT_TYP
     else:
         await send_message(f"❌ 导入失败：{api_result['error']}")
 
-
-# 已移除call_import_auto_api_with_continue函数，因为不再需要分季导入和分集导入功能
     

@@ -1042,6 +1042,7 @@ class WebhookHandler:
             import_params = {
                 "searchType": "tmdb",
                 "searchTerm": tmdb_id,
+                "originalKeyword": f"TMDB ID: {tmdb_id}"  # 添加原始关键词用于识别词匹配
             }
             
             response = call_danmaku_api('POST', '/import/auto', params=import_params)
@@ -1075,14 +1076,16 @@ class WebhookHandler:
                 # 识别词匹配时使用关键词模式
                 import_params = {
                     "searchType": "keyword",
-                    "searchTerm": movie_title
+                    "searchTerm": movie_title,
+                    "originalKeyword": movie_title  # 添加原始关键词用于识别词匹配
                 }
                 logger.info(f"🎯 使用关键词模式导入电影: {movie_title}")
             else:
                 # 非识别词匹配时使用provider模式
                 import_params = {
                     "searchType": provider_type,
-                    "searchTerm": provider_id
+                    "searchTerm": provider_id,
+                    "originalKeyword": movie_title if movie_title else f"{provider_type.upper()} ID: {provider_id}"  # 添加原始关键词用于识别词匹配
                 }
                 logger.info(f"🚀 使用Provider模式导入电影: {provider_type.upper()} {provider_id}")
             
@@ -1295,7 +1298,8 @@ class WebhookHandler:
                         "searchTerm": series_name,
                         "mediaType": "tv_series",
                         "season": season,
-                        "episode": episode_num
+                        "episode": episode_num,
+                        "originalKeyword": series_name  # 添加原始关键词用于识别词匹配
                     }
                     logger.info(f"🎯 使用关键词模式导入: {series_name} S{season:02d}E{episode_num:02d}")
                 else:
@@ -1305,7 +1309,8 @@ class WebhookHandler:
                         "searchTerm": provider_id,
                         "mediaType": "tv_series",
                         "season": season,
-                        "episode": episode_num
+                        "episode": episode_num,
+                        "originalKeyword": series_name if series_name else f"{provider_type.upper()} ID: {provider_id}"  # 添加原始关键词用于识别词匹配
                     }
                     logger.info(f"🚀 使用Provider模式导入: {provider_type.upper()} {provider_id} S{season:02d}E{episode_num:02d}")
                 
@@ -1586,7 +1591,8 @@ class WebhookHandler:
                 "mediaType": "tv_series",
                 "importMethod": "auto",
                 "season": season_num,
-                "episode": episode
+                "episode": episode,
+                "originalKeyword": f"TMDB ID: {tmdb_id}"  # 添加原始关键词用于识别词匹配
             }
             
             logger.info(f"🚀 开始导入单集: TMDB {tmdb_id} S{season_num:02d}E{episode:02d}")
