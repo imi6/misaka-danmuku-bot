@@ -1357,8 +1357,8 @@ async def import_auto_id_input(update: Update, context: ContextTypes.DEFAULT_TYP
                 "originalKeyword": f"{search_type.upper()} ID: {platform_id}"  # 添加原始关键词用于识别词匹配
             }
             
-            await show_import_options(update, context, context.user_data["import_auto_params"])
-            return ConversationHandler.END
+            # 返回show_import_options的返回值，而不是强制结束对话
+            return await show_import_options(update, context, context.user_data["import_auto_params"])
         
     elif input_type == "imdb_url" and search_type == "imdb":
         # IMDB链接：使用解析出的ID并通过爬虫获取媒体类型
