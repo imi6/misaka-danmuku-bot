@@ -10,6 +10,7 @@ from utils.tmdb_api import get_media_type_suggestion, format_tmdb_results_info, 
 from utils.tvdb_api import search_tvdb_by_slug, get_tvdb_tv_seasons
 from utils.imdb_scraper import get_imdb_info
 from utils.bgm_scraper import get_bgm_info
+from utils.emby_name_converter import convert_emby_series_name
 
 # 初始化日志
 logger = logging.getLogger(__name__)
@@ -176,18 +177,110 @@ async def import_auto_season_selection(update: Update, context: ContextTypes.DEF
             logger.info(f"✅ 用户选择季度: {season_number}")
             context.user_data["selected_season"] = season_number
             
-            try:
-                await query.edit_message_text(
-                    f"✅ **已选择第{season_number}季**\n\n"
-                    f"🚀 开始导入选定季度的内容..."
-                )
-                logger.info(f"✅ 季度选择确认消息发送成功")
-            except Exception as edit_error:
-                logger.error(f"❌ 季度选择确认消息发送失败: {edit_error}")
-            
-            # 获取导入参数并添加季度信息
+            # 获取导入参数
             import_params = context.user_data.get("import_auto_params", {})
             logger.info(f"📋 原始导入参数: {import_params}")
+            
+            # 检查是否需要进行识别词匹配
+            original_keyword = import_params.get("originalKeyword")
+            search_type = import_params.get("searchType")
+            
+            # 如果没有识别词匹配，显示默认的季度选择确认消息
+            if not (original_keyword and search_type in ["keyword", "tmdb"] and convert_emby_series_name(original_keyword, season_number)):
+                try:
+                    await query.edit_message_text(
+                        f"✅ **已选择第{season_number}季**\n\n"
+                        f"🚀 开始导入选定季度的内容..."
+                    )
+                    logger.info(f"✅ 季度选择确认消息发送成功")
+                except Exception as edit_error:
+                    logger.error(f"❌ 季度选择确认消息发送失败: {edit_error}")
+            
+            if original_keyword and search_type in ["keyword", "tmdb"]:
+                logger.info(f"🔍 开始检查识别词匹配，原始关键词: {original_keyword}，季度: {season_number}")
+                
+                converted_result = convert_emby_series_name(original_keyword, season_number)
+                if converted_result:
+                    logger.info(f"✅ 识别词匹配成功: {original_keyword} -> {converted_result}")
+                    
+                    # 提取搜索关键词
+                    if isinstance(converted_result, dict) and 'series_name' in converted_result:
+                        search_keyword = converted_result['series_name']
+                        display_result = f"剧集名称: {converted_result['series_name']}, 季度: {converted_result.get('season_number', season_number)}"
+                    else:
+                        search_keyword = str(converted_result)
+                        display_result = str(converted_result)
+                    
+                    try:
+                        await query.edit_message_text(
+                            f"✅ **已选择第{season_number}季**\n\n"
+                            f"🎯 **识别词匹配成功**\n"
+                            f"原始关键词: {original_keyword}\n"
+                            f"转换关键词: {search_keyword}\n\n"
+                            f"🔍 正在搜索转换后的关键词..."
+                        )
+                    except Exception as edit_error:
+                        logger.error(f"❌ 识别词匹配消息发送失败: {edit_error}")
+                    
+                    # 使用转换后的关键词进行搜索
+                    logger.info(f"🔍 使用转换后的关键词进行搜索: {search_keyword}")
+                    
+                    # 调用搜索API
+                    api_result = call_danmaku_api(
+                        method="GET",
+                        endpoint="/search",
+                        params={"keyword": search_keyword}
+                    )
+                    
+                    # 处理搜索结果
+                    if not api_result["success"]:
+                        try:
+                            await query.edit_message_text(f"❌ 搜索失败：{api_result['error']}")
+                        except Exception as edit_error:
+                            logger.error(f"❌ 搜索失败消息发送失败: {edit_error}")
+                        return ConversationHandler.END
+                    
+                    search_data = api_result["data"]
+                    search_id = search_data.get("searchId", "")
+                    items = search_data.get("results", [])
+                    
+                    if not search_id:
+                        try:
+                            await query.edit_message_text("❌ 搜索结果缺少searchId，无法后续导入")
+                        except Exception as edit_error:
+                            logger.error(f"❌ 搜索ID缺失消息发送失败: {edit_error}")
+                        return ConversationHandler.END
+                    
+                    if not items:
+                         try:
+                             await query.edit_message_text(f"❌ 未找到关键词「{search_keyword}」的媒体")
+                         except Exception as edit_error:
+                             logger.error(f"❌ 搜索无结果消息发送失败: {edit_error}")
+                         return ConversationHandler.END
+                    
+                    # 保存搜索结果到上下文
+                    context.user_data["search_id"] = search_id
+                    context.user_data["search_results"] = items
+                    
+                    # 显示搜索结果
+                    from callback.import_media import show_paged_results
+                    
+                    # 创建一个临时的update对象用于显示结果
+                    class TempUpdate:
+                        def __init__(self, query):
+                            self.callback_query = query
+                            self.message = query.message
+                    
+                    temp_update = TempUpdate(query)
+                    await show_paged_results(temp_update, context, items, page=0, per_page=5)
+                    
+                    # 返回搜索结果状态
+                    return SEARCH_RESULTS
+                else:
+                    logger.info(f"ℹ️ 未找到匹配的识别词配置: {original_keyword}")
+            else:
+                logger.debug(f"🔍 跳过识别词匹配检查 - 原始关键词: {original_keyword}, 搜索类型: {search_type}")
+            
             import_params["season"] = season_number
             logger.info(f"📋 添加季度后的导入参数: {import_params}")
             
@@ -943,7 +1036,8 @@ async def process_auto_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
                     "searchType": "tmdb",
                     "searchTerm": tmdb_id,
                     "mediaType": suggested_type,
-                    "importMethod": "auto"
+                    "importMethod": "auto",
+                    "originalKeyword": keyword  # 保存原始关键词用于识别词匹配
                 }
             else:
                 # 电影或无TMDB ID：使用关键词搜索
@@ -951,7 +1045,8 @@ async def process_auto_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
                     "searchType": "keyword",
                     "searchTerm": keyword,
                     "mediaType": suggested_type,
-                    "importMethod": "auto"
+                    "importMethod": "auto",
+                    "originalKeyword": keyword  # 保存原始关键词用于识别词匹配
                 }
             
             # 根据类型决定处理方式
@@ -1181,7 +1276,7 @@ async def show_season_selection(update: Update, context: ContextTypes.DEFAULT_TY
     """
     if not seasons or len(seasons) == 0:
         # 没有找到季度信息，使用默认导入（电视剧设置season=1）
-        await update.message.reply_text(
+        await send_message_safe(update, context,
             f"⚠️ **未找到季度信息**\n\n"
             f"🎬 标题: {media_info.get('title', 'N/A')}\n"
             f"📅 年份: {media_info.get('year', 'N/A')}\n\n"
@@ -1196,7 +1291,7 @@ async def show_season_selection(update: Update, context: ContextTypes.DEFAULT_TY
     elif len(seasons) == 1:
         # 只有一季，直接导入season=1
         season = seasons[0]
-        await update.message.reply_text(
+        await send_message_safe(update, context,
             f"📺 **检测到单季电视剧**\n\n"
             f"🎬 标题: {media_info.get('title', 'N/A')}\n"
             f"📅 年份: {media_info.get('year', 'N/A')}\n"
@@ -1238,7 +1333,7 @@ async def show_season_selection(update: Update, context: ContextTypes.DEFAULT_TY
         keyboard.append([InlineKeyboardButton("❌ 取消", callback_data="cancel")])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text(message_text, reply_markup=reply_markup)
+        await send_message_safe(update, context, message_text, reply_markup=reply_markup)
         
         return IMPORT_AUTO_SEASON_SELECTION
 
@@ -1858,6 +1953,17 @@ async def import_auto_id_input(update: Update, context: ContextTypes.DEFAULT_TYP
 # 已移除import_auto_season_input和import_auto_episode_input函数，因为不再需要分季导入和分集导入功能
 
 
+async def send_message_safe(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, **kwargs):
+    """安全发送消息，处理回调更新时 update.message 为 None 的情况"""
+    if update.message:
+        return await update.message.reply_text(text, **kwargs)
+    else:
+        return await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=text,
+            **kwargs
+        )
+
 async def show_import_options(update: Update, context: ContextTypes.DEFAULT_TYPE, params: dict):
     """显示导入选项，对于电视剧检查季度信息"""
     # 保存参数到上下文
@@ -1869,7 +1975,7 @@ async def show_import_options(update: Update, context: ContextTypes.DEFAULT_TYPE
         search_type = params.get("searchType")
         search_term = params.get("searchTerm")
         
-        await update.message.reply_text("🔍 正在获取季度信息...")
+        await send_message_safe(update, context, "🔍 正在获取季度信息...")
         
         # 根据平台获取季度信息
         seasons = None
@@ -1927,7 +2033,7 @@ async def show_import_options(update: Update, context: ContextTypes.DEFAULT_TYPE
                         params["season"] = season_number
                         params["importMethod"] = "auto"
                         
-                        await update.message.reply_text(
+                        await send_message_safe(update, context,
                             f"✅ **从标题解析出季度信息**\n\n"
                             f"🎬 标题: {douban_info.get('title', 'N/A')}\n"
                             f"📅 年份: {douban_info.get('year', 'N/A')}\n"
@@ -1940,7 +2046,7 @@ async def show_import_options(update: Update, context: ContextTypes.DEFAULT_TYPE
                     else:
                         # 没有解析出季度信息，默认设置为第1季
                         params["season"] = 1
-                        await update.message.reply_text(
+                        await send_message_safe(update, context,
                             f"✅ **未从标题解析出季度信息，默认导入第1季**\n\n"
                             f"🎬 标题: {douban_info.get('title', 'N/A')}\n"
                             f"📅 年份: {douban_info.get('year', 'N/A')}\n"
@@ -1965,7 +2071,7 @@ async def show_import_options(update: Update, context: ContextTypes.DEFAULT_TYPE
                         params["season"] = season_number
                         params["importMethod"] = "auto"
                         
-                        await update.message.reply_text(
+                        await send_message_safe(update, context,
                             f"✅ **从标题解析出季度信息**\n\n"
                             f"🎬 标题: {bgm_info.get('title', 'N/A')}\n"
                             f"📅 年份: {bgm_info.get('year', 'N/A')}\n"
@@ -1978,7 +2084,7 @@ async def show_import_options(update: Update, context: ContextTypes.DEFAULT_TYPE
                     else:
                         # 没有解析出季度信息，默认设置为第1季
                         params["season"] = 1
-                        await update.message.reply_text(
+                        await send_message_safe(update, context,
                             f"✅ **未从标题解析出季度信息，默认导入第1季**\n\n"
                             f"🎬 标题: {bgm_info.get('title', 'N/A')}\n"
                             f"📅 年份: {bgm_info.get('year', 'N/A')}\n"
