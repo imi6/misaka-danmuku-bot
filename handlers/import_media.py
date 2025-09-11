@@ -1153,7 +1153,8 @@ async def import_auto_keyword_input(update: Update, context: ContextTypes.DEFAUL
                 "searchType": "tmdb",
                 "searchTerm": tmdb_id,
                 "mediaType": suggested_type,
-                "importMethod": "auto"
+                "importMethod": "auto",
+                "originalKeyword": keyword  # 保存原始关键词用于识别词匹配
             }
         else:
             # 电影或无TMDB ID：使用关键词搜索
@@ -1161,7 +1162,8 @@ async def import_auto_keyword_input(update: Update, context: ContextTypes.DEFAUL
                 "searchType": "keyword",
                 "searchTerm": keyword,
                 "mediaType": suggested_type,
-                "importMethod": "auto"
+                "importMethod": "auto",
+                "originalKeyword": keyword  # 保存原始关键词用于识别词匹配
             }
         
         # 根据类型决定处理方式

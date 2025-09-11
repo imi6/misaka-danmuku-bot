@@ -181,7 +181,8 @@ async def handle_media_type_selection(update: Update, context: ContextTypes.DEFA
                 "searchType": "keyword",
                 "searchTerm": existing_keyword,
                 "mediaType": media_type,
-                "importMethod": "auto"
+                "importMethod": "auto",
+                "originalKeyword": existing_keyword  # 保存原始关键词用于识别词匹配
             }
             
             from handlers.import_media import call_import_auto_api
@@ -197,7 +198,8 @@ async def handle_media_type_selection(update: Update, context: ContextTypes.DEFA
             context.user_data["import_auto_params"] = {
                 "searchType": "keyword",
                 "searchTerm": existing_keyword,
-                "mediaType": media_type
+                "mediaType": media_type,
+                "originalKeyword": existing_keyword  # 保存原始关键词用于识别词匹配
             }
             
             # 显示导入方式选择
@@ -233,7 +235,8 @@ async def handle_media_type_selection(update: Update, context: ContextTypes.DEFA
                 "searchType": search_type,
                 "searchTerm": existing_id,
                 "mediaType": media_type,
-                "importMethod": "auto"
+                "importMethod": "auto",
+                "originalKeyword": context.user_data.get("import_auto_keyword", "")  # 保存原始关键词用于识别词匹配
             }
             
             from handlers.import_media import call_import_auto_api
@@ -244,7 +247,8 @@ async def handle_media_type_selection(update: Update, context: ContextTypes.DEFA
             context.user_data["import_auto_params"] = {
                 "searchType": search_type,
                 "searchTerm": existing_id,
-                "mediaType": media_type
+                "mediaType": media_type,
+                "originalKeyword": context.user_data.get("import_auto_keyword", "")  # 保存原始关键词用于识别词匹配
             }
             
             from handlers.import_media import show_import_options
