@@ -62,8 +62,8 @@ async def identify_original_name_input(update: Update, context: ContextTypes.DEF
     
     await update.message.reply_text(
         f"✅ 原始影视名称：**{original_name}**\n\n"
-        f"**步骤 2/4**: 请输入需要识别的影视季度\n"
-        f"例如：9（电视剧第9季）或 0（电影）",
+        f"**步骤 2/4**: 请输入需要识别的影视季度(电影写0即可)\n"
+        f"例如：9",
         parse_mode='Markdown'
     )
     
@@ -81,7 +81,7 @@ async def identify_original_season_input(update: Update, context: ContextTypes.D
             raise ValueError("季度必须是非负整数")
     except ValueError:
         await update.message.reply_text(
-            "❌ 请输入有效的季度数字（非负整数），例如：9（电视剧）或 0（电影）"
+            "❌ 请输入有效的季度数字"
         )
         return IDENTIFY_ORIGINAL_SEASON
     
@@ -120,8 +120,8 @@ async def identify_target_name_input(update: Update, context: ContextTypes.DEFAU
     
     await update.message.reply_text(
         f"✅ 目标影视名称：**{target_name}**\n\n"
-        f"**步骤 4/4**: 请输入识别后的影视季度\n"
-        f"例如：1（电视剧第1季）或 0（电影）",
+        f"**步骤 4/4**: 请输入识别后的影视季度（电影写0即可）\n"
+        f"例如：1",
         parse_mode='Markdown'
     )
     
@@ -139,7 +139,7 @@ async def identify_target_season_input(update: Update, context: ContextTypes.DEF
             raise ValueError("季度必须是非负整数")
     except ValueError:
         await update.message.reply_text(
-            "❌ 请输入有效的季度数字（非负整数），例如：1（电视剧）或 0（电影）"
+            "❌ 请输入有效的季度数字"
         )
         return IDENTIFY_TARGET_SEASON
     

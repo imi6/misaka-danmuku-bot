@@ -664,7 +664,8 @@ class WebhookHandler:
                                 source_id = sources[0].get('sourceId')
                                 if source_id:
                                     # 传递剧集名称和年份，用于TMDB搜索
-                                    await self._refresh_episodes(source_id, [episode, episode + 1], provider_id, season, series_name, year)
+                                    identify_matched = media_info.get('identify_matched', False)
+                                    await self._refresh_episodes(source_id, [episode, episode + 1], provider_id, season, series_name, year, identify_matched)
                                     refresh_success = True
                                 else:
                                     logger.error(f"❌ 无法获取源ID: {selected_match.get('title')}")
@@ -1228,7 +1229,8 @@ class WebhookHandler:
             'tvdb': 'tvdb', 
             'imdb': 'imdb',
             'douban': 'douban',
-            'bangumi': 'bangumi'
+            'bangumi': 'bangumi',
+            'keyword': 'keyword'
         }
         
         search_type = search_type_map.get(provider_type.lower(), 'tmdb')
@@ -1417,7 +1419,7 @@ class WebhookHandler:
             
         return None, None, None
     
-    async def _refresh_episodes(self, source_id: str, episodes: list, tmdb_id: Optional[str], season_num: int, series_name: Optional[str] = None, year: Optional[str] = None):
+    async def _refresh_episodes(self, source_id: str, episodes: list, tmdb_id: Optional[str], season_num: int, series_name: Optional[str] = None, year: Optional[str] = None, identify_matched: bool = False):
         """刷新指定集数
         
         Args:
@@ -1427,6 +1429,7 @@ class WebhookHandler:
             season_num: 季度号
             series_name: 剧集名称（用于TMDB搜索）
             year: 年份（用于TMDB搜索）
+            identify_matched: 是否为识别词匹配
         """
         try:
             # 先获取源的分集列表来获取episodeId
@@ -1456,30 +1459,36 @@ class WebhookHandler:
             for episode in episodes:
                 episode_info = episode_map.get(episode)
                 if not episode_info:
-                    # 当集数不存在时，尝试导入该集
-                    current_tmdb_id = tmdb_id
-                    
-                    # 如果没有TMDB ID，尝试通过剧集名称搜索获取
-                    if not current_tmdb_id and series_name:
-                        logger.info(f"🔍 未找到第{episode}集且缺少TMDB ID，尝试通过TMDB搜索: {series_name} ({year})")
-                        tmdb_search_result = search_tv_series_by_name_year(series_name, year)
-                        
-                        if tmdb_search_result:
-                            # 验证搜索结果是否匹配
-                            if validate_tv_series_match(tmdb_search_result, series_name, year, season_num, episode):
-                                current_tmdb_id = tmdb_search_result.get('tmdb_id')
-                                logger.info(f"✅ TMDB搜索成功，找到匹配的剧集: {tmdb_search_result.get('name')} (ID: {current_tmdb_id})")
-                            else:
-                                logger.warning(f"⚠️ TMDB搜索结果验证失败: {series_name}")
-                        else:
-                            logger.info(f"ℹ️ TMDB搜索未找到匹配结果: {series_name} ({year})")
-                    
-                    if current_tmdb_id:
-                        logger.warning(f"⚠️ 未找到第{episode}集的episodeId，尝试导入")
-                        # 当集数不存在且有TMDB ID时，尝试导入该集
-                        await self._import_single_episode(current_tmdb_id, season_num, episode)
+                    # 当集数不存在时，根据识别词匹配状态决定处理方式
+                    if identify_matched:
+                        # 识别词匹配时，直接使用keyword/auto导入该集
+                        logger.info(f"🔍 未找到第{episode}集且识别词匹配，直接关键词导入第{episode}集: {series_name} S{season_num}E{episode:02d}")
+                        await self._import_episodes_by_provider(None, 'keyword', season_num, [episode], series_name, identify_matched)
                     else:
-                        logger.info(f"ℹ️ 未找到第{episode}集的episodeId且无法获取TMDB ID，跳过导入")
+                        # 非识别词匹配时，使用原有TMDB搜索逻辑
+                        current_tmdb_id = tmdb_id
+                        
+                        # 如果没有TMDB ID，尝试通过剧集名称搜索获取
+                        if not current_tmdb_id and series_name:
+                            logger.info(f"🔍 未找到第{episode}集且缺少TMDB ID，尝试通过TMDB搜索: {series_name} ({year})")
+                            tmdb_search_result = search_tv_series_by_name_year(series_name, year)
+                            
+                            if tmdb_search_result:
+                                # 验证搜索结果是否匹配
+                                if validate_tv_series_match(tmdb_search_result, series_name, year, season_num, episode):
+                                    current_tmdb_id = tmdb_search_result.get('tmdb_id')
+                                    logger.info(f"✅ TMDB搜索成功，找到匹配的剧集: {tmdb_search_result.get('name')} (ID: {current_tmdb_id})")
+                                else:
+                                    logger.warning(f"⚠️ TMDB搜索结果验证失败: {series_name}")
+                            else:
+                                logger.info(f"ℹ️ TMDB搜索未找到匹配结果: {series_name} ({year})")
+                        
+                        if current_tmdb_id:
+                            logger.warning(f"⚠️ 未找到第{episode}集的episodeId，尝试导入")
+                            # 当集数不存在且有TMDB ID时，尝试导入该集
+                            await self._import_single_episode(current_tmdb_id, season_num, episode)
+                        else:
+                            logger.info(f"ℹ️ 未找到第{episode}集的episodeId且无法获取TMDB ID，跳过导入")
                     continue
                 
                 episode_id = episode_info['episodeId']
@@ -1729,10 +1738,6 @@ class WebhookHandler:
                     f"{error_msg}",
                     f"```"
                 ])
-            
-            # 添加媒体详细信息
-            if media_info.get('Year'):
-                message_lines.insert(-2, f"• 年份: {media_info.get('Year')}")
             
             if media_info.get('Overview'):
                 overview = media_info.get('Overview', '')[:100]
