@@ -319,8 +319,8 @@ def determine_input_type(text: str) -> Dict[str, Any]:
     # 检查是否为 tt 开头的 ID
     if is_tt_id(text):
         return {
-            "type": "tt_id",
-            "value": text
+            "type": "imdb_url",
+            "imdb_id": text
         }
     
     # 默认为关键词搜索
