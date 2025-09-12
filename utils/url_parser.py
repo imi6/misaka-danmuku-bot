@@ -158,7 +158,7 @@ def parse_imdb_url(url: str) -> Optional[Dict[str, Any]]:
     imdb_id = match.group(1)
     query_params = match.group(2) if match.group(2) else ""
     
-    result = {"imdb_id": imdb_id}
+    result = {"imdb_id": imdb_id, "original_url": url.strip()}
     
     # 从ref参数推断媒体类型
     # 严格规则：只有fn_all_ttl_1=电视剧，fn_all_ttl_2=电影，其他任何ref都走爬虫
@@ -223,15 +223,27 @@ def is_bgm_url(text: str) -> bool:
     return parse_bgm_url(text) is not None
 
 def is_tt_id(text: str) -> bool:
-    """检查文本是否为 tt 开头的 ID 格式（如 tt525553）
+    """检查文本是否为 IMDB ID 格式（tt开头或纯数字）
     
     Args:
         text: 要检查的文本
         
     Returns:
-        bool: 如果是 tt 开头的 ID 返回 True，否则返回 False
+        bool: 如果是 IMDB ID 格式返回 True，否则返回 False
+        
+    Examples:
+        is_tt_id("tt1234567")  # True - tt开头格式
+        is_tt_id("1234567")    # True - 纯数字格式
+        is_tt_id("abc123")     # False - 无效格式
     """
-    return bool(re.match(r'^tt\d+$', text.strip()))
+    text = text.strip()
+    # 检查tt开头的格式
+    if re.match(r'^tt\d+$', text):
+        return True
+    # 检查纯数字格式（至少1位数字）
+    if re.match(r'^\d+$', text):
+        return True
+    return False
 
 def determine_input_type(text: str) -> Dict[str, Any]:
     """判断输入文本的类型并返回相应的处理信息
@@ -306,6 +318,9 @@ def determine_input_type(text: str) -> Dict[str, Any]:
         # 如果解析出了媒体类型，也包含进去
         if "media_type" in imdb_info:
             result["media_type"] = imdb_info["media_type"]
+        # 如果有原始URL，也包含进去
+        if "original_url" in imdb_info:
+            result["original_url"] = imdb_info["original_url"]
         return result
     
     # 检查是否为 BGM URL
@@ -316,11 +331,16 @@ def determine_input_type(text: str) -> Dict[str, Any]:
             "bgm_id": bgm_info["bgm_id"]
         }
     
-    # 检查是否为 tt 开头的 ID
+    # 检查是否为 IMDB ID（tt开头或纯数字）
     if is_tt_id(text):
+        # 如果是纯数字，转换为tt格式
+        if text.isdigit():
+            imdb_id = f"tt{text}"
+        else:
+            imdb_id = text
         return {
             "type": "imdb_url",
-            "imdb_id": text
+            "imdb_id": imdb_id
         }
     
     # 默认为关键词搜索

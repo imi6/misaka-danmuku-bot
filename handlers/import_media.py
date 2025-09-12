@@ -136,10 +136,7 @@ async def process_media_input_unified(update: Update, context: ContextTypes.DEFA
     elif input_info["type"] == "douban_url":
         return await process_douban_input(update, context, input_info)
     elif input_info["type"] == "imdb_url":
-        # 添加original_url信息用于域名验证
-        input_info_with_url = input_info.copy()
-        input_info_with_url["original_url"] = input_text
-        return await process_imdb_input(update, context, input_info_with_url)
+       return await process_imdb_input(update, context, input_info)
     elif input_info["type"] == "bgm_url":
         return await process_bgm_input(update, context, input_info)
     elif input_info["type"] == "keyword":
@@ -800,26 +797,29 @@ async def process_imdb_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
     imdb_id = input_info["imdb_id"]
     media_type = input_info.get("media_type")  # 从URL ref参数获取的类型
     
-    # 构造original_url用于域名验证
-    original_url = input_info.get("original_url")
-    if not original_url:
-        # 如果没有original_url，说明是纯ID输入，构造标准URL
-        original_url = f"https://www.imdb.com/title/{imdb_id}/"
-    
-    # 域名验证
+    # 域名验证（仅对完整URL输入进行验证）
     logger.info(f"input_info: {input_info}")
-    from utils.url_parser import is_imdb_url
-    if not is_imdb_url(original_url):
-        await update.message.reply_text(
-            "❌ **域名验证失败**\n\n"
-            "请确保输入的是有效的IMDB链接：\n"
-            "• https://www.imdb.com/title/ttxxxxxxx/\n"
-            "• https://m.imdb.com/title/ttxxxxxxx/",
-            parse_mode="Markdown"
-        )
-        return ConversationHandler.END
+    original_url = input_info.get("original_url")
+    if original_url:
+        # 只有当输入的是完整URL时才进行域名验证
+        from utils.url_parser import is_imdb_url
+        if not is_imdb_url(original_url):
+            await update.message.reply_text(
+                "❌ **域名验证失败**\n\n"
+                "请确保输入的是有效的IMDB链接：\n"
+                "• https://www.imdb.com/title/ttxxxxxxx/\n"
+                "• https://m.imdb.com/title/ttxxxxxxx/",
+                parse_mode="Markdown"
+            )
+            return ConversationHandler.END
     
-    await update.message.reply_text(f"🌟 检测到IMDB链接\n\n🆔 ID: {imdb_id}")
+    # 判断输入类型并显示相应信息
+    if original_url:
+        # 输入的是完整URL链接
+        await update.message.reply_text(f"🌟 检测到IMDB链接\n\n🆔 ID: {imdb_id}")
+    else:
+        # 输入的是纯ID（tt开头或纯数字）
+        await update.message.reply_text(f"🌟 检测到IMDB ID\n\n🆔 ID: {imdb_id}")
     
     if media_type:
         # 如果URL中包含类型信息
