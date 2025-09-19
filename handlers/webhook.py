@@ -3,7 +3,8 @@ import json
 import os
 import asyncio
 import re
-from typing import Dict, Any, Optional
+import uuid
+from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from telegram import Bot
@@ -16,6 +17,20 @@ from utils.emby_name_converter import convert_emby_series_name
 
 logger = logging.getLogger(__name__)
 
+class WebhookTask:
+    """Webhook任务数据结构"""
+    def __init__(self, webhook_id: str, operation_type: str, media_info: Dict[str, Any], 
+                 message_id: int, chat_id: str):
+        self.webhook_id = webhook_id
+        self.operation_type = operation_type  # 'import' or 'refresh'
+        self.media_info = media_info
+        self.message_id = message_id  # Telegram消息ID
+        self.chat_id = chat_id  # Telegram聊天ID
+        self.task_ids: List[str] = []  # API返回的taskId列表
+        self.task_statuses: Dict[str, str] = {}  # {taskId: task_status}
+        self.created_at = datetime.now()
+        self.completed = False
+
 class WebhookHandler:
     """Webhook处理器，用于处理来自Emby等媒体服务器的通知"""
     
@@ -26,6 +41,11 @@ class WebhookHandler:
         self.timezone = ZoneInfo(os.getenv('TZ', 'Asia/Shanghai'))
         self._tmdb_cache = {}  # TMDB搜索结果缓存
         self._play_event_cache = {}  # 播放事件缓存，避免重复处理
+        
+        # taskId轮询相关数据结构
+        self._webhook_tasks = {}  # webhook任务记录: {webhook_id: WebhookTask}
+        self._polling_active = False  # 轮询状态标志
+        self._polling_task = None  # 轮询任务引用
         
     def validate_api_key(self, provided_key: str) -> bool:
         """验证API密钥"""
@@ -1047,8 +1067,15 @@ class WebhookHandler:
             
             response = call_danmaku_api('POST', '/import/auto', params=import_params)
             
+            # 添加详细的API响应日志
+            logger.info(f"🔍 电影导入 /import/auto API响应: {response}")
+            
             if response and response.get('success'):
-                logger.info(f"✅ 电影导入成功 (TMDB: {tmdb_id})")
+                # 从data字段中获取taskId
+                data = response.get('data', {})
+                task_id = data.get('taskId')
+                logger.info(f"📊 响应data字段: {data}")
+                logger.info(f"✅ 电影导入成功 (TMDB: {tmdb_id}), taskId: {task_id}")
                 
                 # 导入成功后刷新library缓存
                 # 库缓存刷新已移除，改为直接调用/library/search接口
@@ -1104,10 +1131,16 @@ class WebhookHandler:
                 media_info['MovieTitle'] = movie_title
             
             if response and response.get('success'):
-                logger.info(f"✅ 电影导入成功 ({provider_type.upper()}: {provider_id})")
+                # 从data字段中获取taskId
+                data = response.get('data', {})
+                task_id = data.get('taskId')
+                logger.info(f"✅ 电影导入成功 ({provider_type.upper()}: {provider_id}), taskId: {task_id}")
                 
-                # 发送成功回调通知
-                await self._send_callback_notification('import', media_info, 'success')
+                # 发送成功回调通知，传递taskId
+                if task_id:
+                    await self._send_callback_notification('import', media_info, 'success', task_ids=[task_id])
+                else:
+                    await self._send_callback_notification('import', media_info, 'success')
                 
                 # 库缓存刷新已移除，改为直接调用/library/search接口
             else:
@@ -1185,6 +1218,9 @@ class WebhookHandler:
                 endpoint=f"/library/episode/{episode_id}/refresh"
             )
             
+            # 添加调试日志查看完整响应
+            logger.info(f"🔍 电影刷新API响应: {response}")
+            
             # 构建媒体信息用于回调通知
             media_info = {
                 'Name': movie_title if movie_title else f"源ID {source_id}",
@@ -1198,10 +1234,17 @@ class WebhookHandler:
                 media_info['MovieTitle'] = movie_title
             
             if response and response.get('success'):
-                logger.info(f"✅ 电影刷新成功 (源ID: {source_id})")
+                # 从data字段中获取taskId
+                data = response.get('data', {})
+                task_id = data.get('taskId')
+                logger.info(f"📊 响应data字段: {data}")
+                logger.info(f"✅ 电影刷新成功 (源ID: {source_id}), taskId: {task_id}")
                 
-                # 发送成功回调通知
-                await self._send_callback_notification('refresh', media_info, 'success')
+                # 发送成功回调通知，如果有taskId则启动轮询
+                if task_id:
+                    await self._send_callback_notification('refresh', media_info, 'success', task_ids=[task_id])
+                else:
+                    await self._send_callback_notification('refresh', media_info, 'success')
             else:
                 error_msg = response.get('message', '未知错误') if response else '请求失败'
                 logger.error(f"❌ 电影刷新失败 (源ID: {source_id}): {error_msg}")
@@ -1269,6 +1312,7 @@ class WebhookHandler:
         
         success_count = 0
         failed_count = 0
+        task_ids = []  # 收集成功导入的taskId
         
         try:
             for episode in episodes:
@@ -1322,9 +1366,18 @@ class WebhookHandler:
                         params=import_params
                     )
                     
+                    # 添加详细的API响应日志
+                    logger.info(f"🔍 /import/auto API响应: {response}")
+                    
                     if response and response.get("success"):
                         success_count += 1
-                        logger.info(f"✅ 导入成功: S{season:02d}E{episode_num:02d}")
+                        # 从data字段中获取taskId
+                        data = response.get('data', {})
+                        task_id = data.get('taskId')
+                        logger.info(f"📊 响应data字段: {data}")
+                        if task_id:
+                            task_ids.append(task_id)
+                        logger.info(f"✅ 导入成功: S{season:02d}E{episode_num:02d}, taskId: {task_id}")
                     else:
                         failed_count += 1
                         error_msg = response.get('message', '未知错误') if response else '请求失败'
@@ -1361,10 +1414,10 @@ class WebhookHandler:
                 # 发送回调通知
                 if success_count > 0 and failed_count == 0:
                     # 全部成功
-                    await self._send_callback_notification('import', media_info, 'success')
+                    await self._send_callback_notification('import', media_info, 'success', task_ids=task_ids)
                 elif success_count > 0 and failed_count > 0:
                     # 部分成功
-                    await self._send_callback_notification('import', media_info, 'success', f"{failed_count} 集导入失败")
+                    await self._send_callback_notification('import', media_info, 'success', f"{failed_count} 集导入失败", task_ids=task_ids)
                 else:
                     # 全部失败
                     await self._send_callback_notification('import', media_info, 'failed', "所有集数导入失败")
@@ -1460,6 +1513,7 @@ class WebhookHandler:
             success_count = 0
             failed_count = 0
             skipped_count = 0
+            task_ids = []  # 收集刷新操作的taskId
             
             for episode in episodes:
                 episode_info = episode_map.get(episode)
@@ -1528,7 +1582,14 @@ class WebhookHandler:
                 )
                 
                 if response and response.get("success"):
-                    logger.info(f"✅ 集数刷新成功: E{episode:02d}")
+                    # 从data字段中获取taskId
+                    data = response.get('data', {})
+                    task_id = data.get('taskId')
+                    if task_id:
+                        task_ids.append(task_id)
+                        logger.info(f"✅ 集数刷新成功: E{episode:02d}, taskId: {task_id}")
+                    else:
+                        logger.info(f"✅ 集数刷新成功: E{episode:02d}")
                     success_count += 1
                 else:
                     logger.warning(f"⚠️ 集数刷新失败: E{episode:02d}")
@@ -1562,10 +1623,16 @@ class WebhookHandler:
                 # 发送回调通知
                 if success_count > 0 and failed_count == 0:
                     # 全部成功
-                    await self._send_callback_notification('refresh', media_info, 'success')
+                    if task_ids:
+                        await self._send_callback_notification('refresh', media_info, 'success', task_ids=task_ids)
+                    else:
+                        await self._send_callback_notification('refresh', media_info, 'success')
                 elif success_count > 0 and failed_count > 0:
                     # 部分成功
-                    await self._send_callback_notification('refresh', media_info, 'success', f"{failed_count} 集刷新失败")
+                    if task_ids:
+                        await self._send_callback_notification('refresh', media_info, 'success', f"{failed_count} 集刷新失败", task_ids=task_ids)
+                    else:
+                        await self._send_callback_notification('refresh', media_info, 'success', f"{failed_count} 集刷新失败")
                 elif failed_count > 0:
                     # 全部失败
                     await self._send_callback_notification('refresh', media_info, 'failed', "所有集数刷新失败")
@@ -1634,7 +1701,244 @@ class WebhookHandler:
         
         return name.strip()
     
-    async def _send_callback_notification(self, operation_type: str, media_info: Dict[str, Any], result: str = "success", error_msg: str = None):
+    async def _start_polling_if_needed(self):
+        """启动轮询任务（如果尚未启动）"""
+        if not self._polling_active and self._webhook_tasks:
+            self._polling_active = True
+            self._polling_task = asyncio.create_task(self._polling_loop())
+            logger.info("🔄 启动taskId轮询任务")
+    
+    async def _polling_loop(self):
+        """轮询循环，每5秒检查一次taskId状态"""
+        try:
+            while self._polling_active and self._webhook_tasks:
+                logger.info(f"🔄 开始轮询检查，当前有 {len(self._webhook_tasks)} 个webhook任务")
+                # 检查所有webhook任务
+                completed_webhooks = []
+                
+                for webhook_id, webhook_task in list(self._webhook_tasks.items()):
+                    if webhook_task.completed:
+                        continue
+                    
+                    # 检查该webhook的所有taskId
+                    for task_id in webhook_task.task_ids:
+                        if task_id not in webhook_task.task_statuses:
+                            logger.info(f"🔍 轮询taskId: {task_id}")
+                            # 轮询该taskId的状态
+                            task_data = await self._poll_task_status(task_id)
+                            if task_data:
+                                webhook_task.task_statuses[task_id] = task_data
+                                task_status = task_data.get('status', 'unknown')
+                                logger.info(f"✅ taskId {task_id} 状态更新: {task_status}")
+                            else:
+                                logger.info(f"⏳ taskId {task_id} 仍在执行中，继续等待")
+                        
+                    # 如果所有taskId都有了最终状态，标记为完成
+                    if len(webhook_task.task_statuses) == len(webhook_task.task_ids):
+                        webhook_task.completed = True
+                        completed_webhooks.append(webhook_id)
+                        logger.info(f"🎉 webhook任务 {webhook_id} 所有taskId已完成轮询")
+                        
+                        # 更新通知消息
+                        await self._update_notification_message(webhook_task)
+                
+                # 清理已完成的webhook任务
+                for webhook_id in completed_webhooks:
+                    del self._webhook_tasks[webhook_id]
+                    logger.info(f"🗑️ 清理已完成的webhook任务: {webhook_id}")
+                
+                # 如果没有待处理的任务，停止轮询
+                if not self._webhook_tasks:
+                    self._polling_active = False
+                    logger.info("⏹️ 所有任务已完成，停止轮询")
+                    break
+                
+                # 等待5秒后继续下一轮轮询
+                await asyncio.sleep(5)
+                
+        except Exception as e:
+            logger.error(f"❌ 轮询任务异常: {e}")
+            self._polling_active = False
+    
+    async def _poll_task_status(self, task_id: str) -> Optional[Dict[str, Any]]:
+        """轮询单个taskId的状态
+        
+        Args:
+            task_id: 要轮询的taskId
+            
+        Returns:
+            task data dict if completed, None if still running
+        """
+        try:
+            logger.debug(f"🔍 开始轮询taskId: {task_id}")
+            # 在线程池中运行同步API调用，避免阻塞事件循环
+            response = await asyncio.to_thread(
+                call_danmaku_api,
+                method="GET",
+                endpoint=f"/tasks/{task_id}"
+            )
+            
+            logger.debug(f"📡 API响应: {response}")
+            
+            if response and response.get("success"):
+                # 新的返回结构: { "data": { "taskId": "string", "title": "string", "status": "string", "progress": 0, "description": "string", "createdAt": "2025-09-19T15:33:29.845Z" } }
+                data = response.get('data', {})
+                task_status = data.get('status')
+                task_progress = data.get('progress', 0)
+                task_title = data.get('title', '')
+                
+                logger.info(f"📊 任务状态: {task_status}, 进度: {task_progress}%, 标题: {task_title}")
+                logger.debug(f"📋 完整data字段: {data}")
+                
+                # 检查任务是否完成（根据实际API返回的状态值调整）
+                if task_status in ['completed', 'finished', 'success', '已完成', '完成', '成功', '已成功']:
+                    logger.info(f"✅ taskId {task_id} 已完成")
+                    return data  # 返回完整的任务数据
+                elif task_status in ['failed', 'error', '失败', '已失败']:
+                    logger.warning(f"❌ taskId {task_id} 执行失败")
+                    return data  # 返回完整的任务数据
+                else:
+                    logger.debug(f"⏳ taskId {task_id} 仍在执行中，状态: {task_status}")
+                    return None
+            elif response and response.get("status_code") == 404:
+                # 任务还未准备好，继续等待
+                logger.debug(f"⏳ taskId {task_id} 返回404，任务尚未准备好")
+                return None
+            else:
+                logger.warning(f"⚠️ 轮询taskId {task_id} 失败: {response}")
+                        
+        except Exception as e:
+            logger.error(f"❌ 轮询taskId {task_id} 失败: {e}")
+        
+        return None
+    
+    async def _update_notification_message(self, webhook_task: WebhookTask):
+        """更新通知消息，添加状态信息
+        
+        Args:
+            webhook_task: webhook任务信息
+        """
+        try:
+            # 使用现有的TELEGRAM_BOT_TOKEN创建Bot实例
+            callback_bot = Bot(token=self.config.telegram.bot_token)
+            
+            # 构建更新后的消息
+            timestamp = datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d %H:%M:%S")
+            
+            # 获取媒体基本信息
+            media_info = webhook_task.media_info
+            media_name = self._get_clean_media_name(media_info)
+            media_type = "电影" if media_info.get('Type') == 'Movie' else "剧集"
+            
+            # 构建操作类型描述
+            base_operation_text = "导入" if webhook_task.operation_type == "import" else "刷新"
+            
+            # 为剧集构建包含季集信息的操作描述
+            operation_text = base_operation_text
+            if media_info.get('Type') == 'Series':
+                season = media_info.get('Season')
+                episodes = media_info.get('Episodes', [])
+                
+                if season and episodes:
+                    # 构建季集信息字符串
+                    episode_list = []
+                    for ep in episodes:
+                        episode_list.append(f"S{season}E{ep:02d}")
+                    
+                    if episode_list:
+                        operation_text = f"{base_operation_text}{','.join(episode_list)}"
+            
+            # 构建通知消息
+            message_lines = [
+                f"🎬 **Webhook {base_operation_text}通知**",
+                f"",
+                f"📺 **媒体信息**",
+                f"• 名称: {media_name}",
+                f"• 类型: {media_type}",
+                f"• 操作: {operation_text}",
+                f"• 状态: 🔄 刷新中 → ✅ 处理完成" if webhook_task.operation_type == "refresh" else (f"• 状态: 🔄 入库中 → ✅ 处理完成" if webhook_task.operation_type == "import" else f"• 状态: ✅ 成功 → ✅ 处理完成"),
+                f"• 时间: {timestamp}"
+            ]
+            
+            # 添加剧集特有信息
+            if media_info.get('Type') == 'Series':
+                if media_info.get('Season'):
+                    message_lines.insert(-1, f"• 季度: S{media_info.get('Season')}")
+                
+                # 添加统计信息
+                success_count = media_info.get('SuccessCount', 0)
+                failed_count = media_info.get('FailedCount', 0)
+                total_count = media_info.get('TotalCount', 0)
+                skipped_count = media_info.get('SkippedCount', 0)
+                
+                if total_count > 0:
+                    stats_parts = []
+                    if success_count > 0:
+                        stats_parts.append(f"成功{success_count}集")
+                    if failed_count > 0:
+                        stats_parts.append(f"失败{failed_count}集")
+                    if skipped_count > 0:
+                        stats_parts.append(f"跳过{skipped_count}集")
+                    
+                    if stats_parts:
+                        message_lines.insert(-1, f"• 统计: {' / '.join(stats_parts)} (共{total_count}集)")
+            
+            # 添加Provider信息
+            if media_info.get('ProviderType') and media_info.get('ProviderId'):
+                message_lines.insert(-1, f"• Provider: {media_info.get('ProviderType').upper()} {media_info.get('ProviderId')}")
+            elif media_info.get('SourceId'):
+                message_lines.insert(-1, f"• 源ID: {media_info.get('SourceId')}")
+            
+            # 添加任务执行信息
+            message_lines.extend([
+                f"",
+                f"⚙️ **任务执行信息**"
+            ])
+            
+            for task_id, task_data in webhook_task.task_statuses.items():
+                if isinstance(task_data, dict):
+                    status = task_data.get('status', 'unknown')
+                    description = task_data.get('description', '')
+                    progress = task_data.get('progress', 0)
+                    
+                    status_line = f"• TaskID: `{task_id}` → Status: `{status}`"
+                    if progress > 0:
+                        status_line += f" ({progress}%)"
+                    message_lines.append(status_line)
+                    
+                    # 如果有description且任务已完成，显示详细信息
+                    if description and status in ['completed', 'finished', 'success', '已完成', '完成', '成功', '已成功']:
+                        message_lines.append(f"  └─ 📋 {description}")
+                else:
+                    # 兼容旧格式（字符串状态）
+                    message_lines.append(f"• TaskID: `{task_id}` → Status: `{task_data}`")
+            
+            if media_info.get('Overview'):
+                overview = media_info.get('Overview', '')[:100]
+                if len(media_info.get('Overview', '')) > 100:
+                    overview += "..."
+                message_lines.extend([
+                    f"",
+                    f"📝 **简介**",
+                    f"{overview}"
+                ])
+            
+            message = "\n".join(message_lines)
+            
+            # 更新消息
+            await callback_bot.edit_message_text(
+                chat_id=webhook_task.chat_id,
+                message_id=webhook_task.message_id,
+                text=message,
+                parse_mode='Markdown'
+            )
+            
+            logger.info(f"📝 更新通知消息成功: {operation_text} {media_name}")
+            
+        except Exception as e:
+            logger.error(f"❌ 更新通知消息失败: {e}")
+    
+    async def _send_callback_notification(self, operation_type: str, media_info: Dict[str, Any], result: str = "success", error_msg: str = None, task_ids: List[str] = None):
         """发送回调通知
         
         Args:
@@ -1642,6 +1946,7 @@ class WebhookHandler:
             media_info: 媒体信息
             result: 操作结果 (success/failed)
             error_msg: 错误信息（可选）
+            task_ids: 任务ID列表（可选，用于轮询状态）
         """
         try:
             # 检查回调通知是否启用
@@ -1670,8 +1975,15 @@ class WebhookHandler:
             
             # 构建状态图标和描述
             if result == "success":
-                status_icon = "✅"
-                status_text = "成功"
+                if operation_type == "refresh":
+                    status_icon = "🔄"
+                    status_text = "刷新中"
+                elif operation_type == "import":
+                    status_icon = "🔄"
+                    status_text = "入库中"
+                else:
+                    status_icon = "✅"
+                    status_text = "成功"
             else:
                 status_icon = "❌"
                 status_text = "失败"
@@ -1758,11 +2070,29 @@ class WebhookHandler:
             message = "\n".join(message_lines)
             
             # 发送通知
-            await callback_bot.send_message(
+            sent_message = await callback_bot.send_message(
                 chat_id=self.config.webhook.callback_chat_id,
                 text=message,
                 parse_mode='Markdown'
             )
+            
+            # 如果有taskIds，记录webhook任务用于后续轮询
+            if task_ids and sent_message:
+                webhook_id = str(uuid.uuid4())
+                webhook_task = WebhookTask(
+                    webhook_id=webhook_id,
+                    operation_type=operation_type,
+                    media_info=media_info.copy(),
+                    message_id=sent_message.message_id,
+                    chat_id=self.config.webhook.callback_chat_id
+                )
+                webhook_task.task_ids.extend(task_ids)
+                self._webhook_tasks[webhook_id] = webhook_task
+                
+                # 启动轮询任务（如果尚未启动）
+                await self._start_polling_if_needed()
+                
+                logger.info(f"📝 记录webhook任务: {webhook_id}, taskIds: {task_ids}")
             
             logger.info(f"📤 回调通知发送成功: {operation_text} {media_name}")
             

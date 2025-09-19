@@ -473,7 +473,9 @@ async def execute_episode_refresh(update: Update, context: ContextTypes.DEFAULT_
             
             if response and response.get('success'):
                 success_count += 1
-                task_id = response.get('data', {}).get('taskId')
+                data = response.get('data', {})
+                task_id = data.get('taskId')
+                logger.info(f"📊 响应data字段: {data}")
                 if task_id:
                     task_ids.append(task_id)
                 logger.info(f"分集 {episode_id} 刷新成功，taskId: {task_id}")
