@@ -1441,9 +1441,6 @@ class WebhookHandler:
         """
         await self._import_episodes_by_provider(tmdb_id, 'tmdb', season, episodes, series_name)
     
-
-    
-
      
     def _get_priority_provider_info(self, media_info: Dict[str, Any]) -> tuple:
         """
@@ -1460,9 +1457,10 @@ class WebhookHandler:
         if tmdb_id:
             return 'tmdb', tmdb_id, 'tmdb'
             
-        tvdb_id = media_info.get('tvdb_id')
-        if tvdb_id:
-            return 'tvdb', tvdb_id, 'tvdb'
+        # 暂时取消tvdb
+        # tvdb_id = media_info.get('tvdb_id')
+        # if tvdb_id:
+        #     return 'tvdb', tvdb_id, 'tvdb'
             
         imdb_id = media_info.get('imdb_id')
         if imdb_id:
@@ -1636,7 +1634,7 @@ class WebhookHandler:
                         await self._send_callback_notification('refresh', media_info, 'success', f"{failed_count} 集刷新失败")
                 elif failed_count > 0:
                     # 全部失败
-                    await self._send_callback_notification('refresh', media_info, 'failed', "所有集数刷新失败")
+                    await self._send_callback_notification('refresh', media_info, 'failed', "所有集数刷新失败", task_ids=task_ids)
                 
                 logger.info(f"📊 刷新完成: 成功 {success_count}/{processed_episodes} 集，跳过 {skipped_count} 集")
                     
@@ -1672,10 +1670,53 @@ class WebhookHandler:
                 params=import_params
             )
             
+            task_ids = []
+            success_count = 0
+            failed_count = 0
+            
             if response and response.get("success"):
                 logger.info(f"✅ 单集导入成功: S{season_num:02d}E{episode:02d}")
+                success_count = 1
+                # 从data字段中获取taskId
+                data = response.get('data', {})
+                task_id = data.get('taskId')
+                if task_id:
+                    task_ids.append(task_id)
             else:
                 logger.info(f"ℹ️ 单集可能不存在或已导入: S{season_num:02d}E{episode:02d}")
+                failed_count = 1
+            
+            # 获取剧集名称（用于通知）
+            series_name = None
+            try:
+                tmdb_info = get_tmdb_media_details(tmdb_id, 'tv_series')
+                if tmdb_info:
+                    series_name = tmdb_info.get('name')
+            except Exception as e:
+                logger.warning(f"⚠️ 获取TMDB详细信息时出错: {e}")
+            
+            # 构建媒体信息用于回调通知
+            media_info = {
+                'Name': series_name if series_name else f"TMDB {tmdb_id} S{season_num}",
+                'Type': 'Series',
+                'ProviderId': tmdb_id,
+                'ProviderType': 'tmdb',
+                'Season': season_num,
+                'Episodes': [episode],
+                'SuccessCount': success_count,
+                'FailedCount': failed_count,
+                'TotalCount': 1
+            }
+            
+            # 添加剧集名称（如果有）
+            if series_name:
+                media_info['SeriesName'] = series_name
+            
+            # 发送回调通知，无论成功还是失败都传递task_ids
+            if success_count > 0:
+                await self._send_callback_notification('import', media_info, 'success', task_ids=task_ids)
+            else:
+                await self._send_callback_notification('import', media_info, 'failed', "单集导入失败", task_ids=task_ids)
                 
         except Exception as e:
             logger.error(f"❌ 导入单集异常: {e}")
@@ -1702,14 +1743,19 @@ class WebhookHandler:
         
         return name.strip()
     
-    async def _start_polling_if_needed(self):
-        """启动轮询任务（如果尚未启动）"""
+    async def _start_polling_if_needed(self, callback_bot=None):
+        """启动轮询任务（如果尚未启动）
+        
+        Args:
+            callback_bot: 已初始化的Bot实例（可选）
+        """
+            
         if not self._polling_active and (self._webhook_tasks or self._webhook_import_tasks):
             self._polling_active = True
-            self._polling_task = asyncio.create_task(self._polling_loop())
+            self._polling_task = asyncio.create_task(self._polling_loop(callback_bot))
             logger.info("🔄 启动taskId轮询任务")
     
-    async def _polling_loop(self):
+    async def _polling_loop(self, callback_bot=None):
         """轮询循环，每5秒检查一次taskId状态"""
         try:
             while self._polling_active and (self._webhook_tasks or self._webhook_import_tasks):
@@ -1724,6 +1770,7 @@ class WebhookHandler:
                     original_webhook_task = import_task_info['webhook_task']
                     start_time = import_task_info['start_time']
                     timeout_hours = import_task_info['timeout_hours']
+                    all_task_ids = import_task_info.get('all_task_ids', [import_task_id])
                     
                     # 检查是否超时（默认1小时）
                     elapsed_time = current_time - start_time
@@ -1732,10 +1779,22 @@ class WebhookHandler:
                         timeout_import_tasks.append((import_task_id, original_webhook_task))
                         continue
                     
-                    logger.info(f"🔍 轮询入库任务execution: {import_task_id} (已运行 {elapsed_time})")
-                    real_task_ids = await self._poll_import_task_execution(import_task_id)
-                    if real_task_ids:
-                        # 获取到executionTaskId，创建新的webhook任务
+                    all_real_task_ids = []
+                    all_tasks_completed = True
+                    # 轮询所有入库任务的execution接口
+                    for task_id in all_task_ids:
+                        logger.info(f"🔍 轮询入库任务execution: {task_id} (已运行 {elapsed_time})")
+                        real_task_ids = await self._poll_import_task_execution(task_id)
+                        if real_task_ids:
+                            all_real_task_ids.extend(real_task_ids)
+                            logger.info(f"✅ 入库任务 {task_id} 获取到executionTaskIds: {real_task_ids}")
+                        else:
+                            logger.info(f"⏳ 入库任务 {task_id} 仍在处理中，继续等待")
+                            all_tasks_completed = False
+                            
+                    # 只有当所有入库任务的execution接口都执行完毕并获取到真实的taskId后，才创建新的webhook任务
+                    if all_tasks_completed and all_real_task_ids:
+                        # 获取到所有executionTaskId，创建新的webhook任务
                         new_webhook_id = str(uuid.uuid4())
                         new_webhook_task = WebhookTask(
                             webhook_id=new_webhook_id,
@@ -1744,47 +1803,57 @@ class WebhookHandler:
                             message_id=original_webhook_task.message_id,
                             chat_id=original_webhook_task.chat_id
                         )
-                        new_webhook_task.task_ids.extend(real_task_ids)
+                        new_webhook_task.task_ids.extend(all_real_task_ids)
                         
                         # 将新任务添加到webhook任务队列
                         self._webhook_tasks[new_webhook_id] = new_webhook_task
-                        logger.info(f"✅ 入库任务 {import_task_id} 解析完成，创建新webhook任务 {new_webhook_id}，executionTaskIds: {real_task_ids}")
+                        logger.info(f"✅ 入库任务 {import_task_id} 解析完成，所有execution接口已执行完毕，创建新webhook任务 {new_webhook_id}，executionTaskIds: {all_real_task_ids}")
+                        completed_import_tasks.append(import_task_id)
+                    elif all_tasks_completed:
+                        # 所有任务都已完成但没有获取到任何taskId
+                        logger.warning(f"⚠️ 入库任务 {import_task_id} 所有execution接口已执行完毕，但未获取到任何taskId")
                         completed_import_tasks.append(import_task_id)
                     else:
-                        logger.info(f"⏳ 入库任务 {import_task_id} 仍在处理中，继续等待")
+                        logger.info(f"⏳ 入库任务 {import_task_id} 仍有任务在处理中，继续等待")
                 
                 # 处理超时任务
                 for timeout_task_id, timeout_webhook_task in timeout_import_tasks:
                     try:
-                        # 获取原消息内容并只修改状态
-                        try:
-                            # 获取原消息
-                            original_message = await self.bot.get_message(
-                                chat_id=timeout_webhook_task.chat_id,
-                                message_id=timeout_webhook_task.message_id
-                            )
+                        if callback_bot:
+                            # 构建超时失败消息
+                            media_info = timeout_webhook_task.media_info
+                            media_name = self._get_clean_media_name(media_info)
+                            media_type = "电影" if media_info.get('Type') == 'Movie' else "剧集"
+                            timestamp = datetime.now(self.timezone).strftime("%Y-%m-%d %H:%M:%S")
                             
-                            # 修改消息中的状态行
-                            original_text = original_message.text or ""
-                            updated_text = original_text.replace("• 状态: 🔄 入库中", "• 状态: ❌ 失败")
+                            # 构建通知消息
+                            message_lines = [
+                                f"🎬 **Webhook 导入通知**",
+                                f"",
+                                f"📺 **媒体信息**",
+                                f"• 名称: {media_name}",
+                                f"• 类型: {media_type}",
+                                f"• 操作: 导入",
+                                f"• 状态: 🔄 入库中 → ❌ 失败",
+                                f"• 时间: {timestamp}"
+                            ]
                             
-                            await self.bot.edit_message_text(
+                            # 添加超时信息
+                            message_lines.append(f"• 原因: 导入任务执行失败")
+                            
+                            message = "\n".join(message_lines)
+                            
+                            # 更新消息
+                            await callback_bot.edit_message_text(
                                 chat_id=timeout_webhook_task.chat_id,
                                 message_id=timeout_webhook_task.message_id,
-                                text=updated_text
+                                text=message,
+                                parse_mode='Markdown'
                             )
-                        except Exception as get_msg_error:
-                            # 如果获取原消息失败，发送简化的失败通知
-                            media_name = self._extract_media_name(timeout_webhook_task.media_info)
-                            failure_message = f"❌ 入库任务超时失败\n\n📺 媒体: {media_name}\n• 状态: 🔄 入库中 → ❌ 失败"
                             
-                            await self.bot.edit_message_text(
-                                chat_id=timeout_webhook_task.chat_id,
-                                message_id=timeout_webhook_task.message_id,
-                                text=failure_message
-                            )
-                        
-                        logger.info(f"📤 已发送超时失败通知: {timeout_task_id}")
+                            logger.info(f"📤 已发送超时失败通知: {timeout_task_id}")
+                        else:
+                            logger.warning(f"🤖 Bot实例未提供，无法发送超时失败通知: {timeout_task_id}")
                     except Exception as e:
                         logger.error(f"❌ 发送超时失败通知失败: {e}")
                     
@@ -1925,24 +1994,40 @@ class WebhookHandler:
             
             if response and response.get("success"):
                 data = response.get('data', {})
-                # 根据用户需求，获取executionTaskId即可结束轮询
-                execution_task_id = None
+                task_ids = []
                 
                 if isinstance(data, dict):
-                    # 优先查找executionTaskId字段
-                    execution_task_id = data.get('executionTaskId')
-                    if not execution_task_id:
-                        # 尝试其他可能的字段名
-                        execution_task_id = data.get('taskId')
+                    # 检查是否有多任务ID字段
+                    if 'executionTaskIds' in data and isinstance(data['executionTaskIds'], list):
+                        # 如果有多个executionTaskId
+                        task_ids.extend(data['executionTaskIds'])
+                    elif 'tasks' in data and isinstance(data['tasks'], list):
+                        # 检查是否有tasks列表
+                        for task in data['tasks']:
+                            if isinstance(task, dict):
+                                task_id = task.get('taskId', task.get('id'))
+                                if task_id:
+                                    task_ids.append(task_id)
+                    else:
+                        # 检查单个taskId字段
+                        execution_task_id = data.get('executionTaskId')
                         if not execution_task_id:
-                            execution_task_id = data.get('id')
+                            execution_task_id = data.get('taskId')
+                            if not execution_task_id:
+                                execution_task_id = data.get('id')
+                        if execution_task_id:
+                            task_ids.append(execution_task_id)
                 elif isinstance(data, str):
                     # 如果data直接是taskId字符串
-                    execution_task_id = data
+                    task_ids.append(data)
+                elif isinstance(data, list):
+                    # 如果data直接是taskIds列表
+                    task_ids.extend(data)
                 
-                if execution_task_id:
-                    logger.info(f"✅ 入库任务 {import_task_id} 获取到executionTaskId: {execution_task_id}")
-                    return [str(execution_task_id)]  # 返回单个executionTaskId作为列表
+                if task_ids:
+                    logger.info(f"✅ 入库任务 {import_task_id} 获取到taskIds: {task_ids}")
+                    # 确保所有taskId都是字符串
+                    return [str(task_id) for task_id in task_ids]
                 else:
                     logger.debug(f"⏳ 入库任务 {import_task_id} 尚未生成executionTaskId")
                     return None
@@ -2041,23 +2126,49 @@ class WebhookHandler:
                 f"⚙️ **任务执行信息**"
             ])
             
+            # 检查是否有失败的任务
+            has_failed_tasks = any(
+                isinstance(task_data, dict) and task_data.get('status') in ['failed', 'error', '失败', '已失败']
+                or isinstance(task_data, str) and task_data in ['failed', 'error', '失败', '已失败']
+                for task_data in webhook_task.task_statuses.values()
+            )
+            
+            # 显示所有任务的详细信息
             for task_id, task_data in webhook_task.task_statuses.items():
                 if isinstance(task_data, dict):
                     status = task_data.get('status', 'unknown')
                     description = task_data.get('description', '')
                     progress = task_data.get('progress', 0)
                     
-                    status_line = f"• TaskID: `{task_id}` → Status: `{status}`"
-                    if progress > 0:
-                        status_line += f" ({progress}%)"
-                    message_lines.append(status_line)
+                    # 为不同状态添加视觉指示
+                    status_icon = "✅" if status in ['completed', 'finished', 'success', '已完成', '完成', '成功', '已成功'] else "❌" if status in ['failed', 'error', '失败', '已失败'] else "🔄"
+                    status_text = f"{status_icon} {status}"
                     
-                    # 如果有description且任务已完成，显示详细信息
-                    if description and status in ['completed', 'finished', 'success', '已完成', '完成', '成功', '已成功']:
-                        message_lines.append(f"  └─ 📋 {description}")
+                    # 显示任务ID
+                    message_lines.append(f"• TaskID: `{task_id}`")
+                    # 显示状态和进度
+                    message_lines.append(f"  └─ 状态: {status_text} ({progress}%)" if progress > 0 else f"  └─ 状态: {status_text}")
+                    
+                    # 显示描述信息（如错误详情）
+                    if description:
+                        # 处理多行描述
+                        description_lines = description.split('\n')
+                        for line in description_lines:
+                            if line.strip():
+                                message_lines.append(f"  └─ 📋 {line.strip()}")
                 else:
                     # 兼容旧格式（字符串状态）
-                    message_lines.append(f"• TaskID: `{task_id}` → Status: `{task_data}`")
+                    status = str(task_data)
+                    status_icon = "✅" if status in ['completed', 'finished', 'success', '已完成', '完成', '成功', '已成功'] else "❌" if status in ['failed', 'error', '失败', '已失败'] else "🔄"
+                    status_text = f"{status_icon} {status}"
+                    
+                    message_lines.append(f"• TaskID: `{task_id}`")
+                    message_lines.append(f"  └─ 状态: {status_text}")
+            
+            # 如果没有失败任务但有任务状态，以简洁方式显示所有任务状态
+            if not has_failed_tasks and webhook_task.task_statuses:
+                # 这里逻辑已合并到上方的统一处理中
+                pass
             
             if media_info.get('Overview'):
                 overview = media_info.get('Overview', '')[:100]
@@ -2099,9 +2210,8 @@ class WebhookHandler:
             if not self.config.webhook.callback_enabled:
                 return
             
-            # 只发送成功的通知
-            if result != "success":
-                return
+            # 发送所有状态的通知
+            # 不再限制只发送成功的通知，让失败的任务也能被正确记录和追踪
             
             # 检查配置是否有效
             if not self.config.webhook.callback_chat_id:
@@ -2234,14 +2344,18 @@ class WebhookHandler:
                 )
                 
                 if operation_type == "import":
-                    # 入库操作：taskIds需要通过execution接口获取真实taskId
-                    for task_id in task_ids:
-                        self._webhook_import_tasks[task_id] = {
+                    # 入库操作：将所有taskIds合并到一个入库任务中处理，避免消息覆盖
+                    # 对于多集导入，我们使用第一个task_id作为键，但保留所有task_ids的信息
+                    if task_ids:
+                        # 使用第一个task_id作为键
+                        main_task_id = task_ids[0]
+                        self._webhook_import_tasks[main_task_id] = {
                             'webhook_task': webhook_task,
                             'start_time': datetime.now(self.timezone),
-                            'timeout_hours': 1
+                            'timeout_hours': 1,
+                            'all_task_ids': task_ids  # 保存所有task_ids
                         }
-                    logger.info(f"📝 记录入库任务: {webhook_id}, 待解析taskIds: {task_ids}")
+                        logger.info(f"📝 记录入库任务: {webhook_id}, 待解析taskIds: {task_ids}")
                     # 入库任务不立即添加到_webhook_tasks，等获取executionTaskId后再创建新任务
                 else:
                     # 刷新操作：taskIds可以直接轮询
@@ -2249,8 +2363,8 @@ class WebhookHandler:
                     logger.info(f"📝 记录刷新任务: {webhook_id}, taskIds: {task_ids}")
                     self._webhook_tasks[webhook_id] = webhook_task
                 
-                # 启动轮询任务（如果尚未启动）
-                await self._start_polling_if_needed()
+                # 启动轮询任务（如果尚未启动），并传递已创建的callback_bot实例
+                await self._start_polling_if_needed(callback_bot)
             
             logger.info(f"📤 回调通知发送成功: {operation_text} {media_name}")
             
