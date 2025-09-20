@@ -238,6 +238,7 @@ async def _setup_bot_commands(application: Application):
         BotCommand("tasks", "查看任务列表"),
         BotCommand("users", "管理用户权限"),
         BotCommand("identify", "管理识别词映射"),
+        BotCommand("blacklist", "管理webhook黑名单"),
         BotCommand("help", "查看帮助信息"),
         BotCommand("cancel", "取消当前操作")
     ]
@@ -297,7 +298,9 @@ def _setup_handlers(application, handlers_module, callback_module):
     # 导入import_url处理器
     from handlers.import_url import create_import_url_handler
     
-
+    # 导入blacklist管理相关处理器函数
+    from handlers.blacklist_management import blacklist_command
+    from handlers.blacklist_management import create_blacklist_handler
 
     # 创建import_auto回调处理器（需要在ConversationHandler之前定义）
     import_auto_callback_handler = CallbackQueryHandler(
@@ -606,6 +609,11 @@ def _setup_handlers(application, handlers_module, callback_module):
     )
     application.add_handler(identify_handler)
     current_handlers["identify_handler"] = identify_handler
+    
+    # 导入并注册blacklist管理处理器
+    blacklist_handler = create_blacklist_handler()
+    application.add_handler(blacklist_handler)
+    current_handlers["blacklist_handler"] = blacklist_handler
 
 
 async def init_bot() -> Application:

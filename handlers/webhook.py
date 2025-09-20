@@ -14,6 +14,7 @@ from utils.tmdb_api import get_tmdb_media_details, search_tv_series_by_name_year
 from utils.api import call_danmaku_api
 from utils.security import mask_sensitive_data
 from utils.emby_name_converter import convert_emby_series_name
+from utils.blacklist_config import load_blacklist
 
 logger = logging.getLogger(__name__)
 
@@ -326,13 +327,24 @@ class WebhookHandler:
         except Exception as e:
             logger.error(f"❌ 发送播放通知时发生错误: {e}")
     
-    async def _process_smart_library_management(self, media_info: Dict[str, str]):
+    async def _process_smart_library_management(self, media_info: Dict[str, Any]):
         """执行智能影视库管理流程
         
         Args:
             media_info: 媒体信息
         """
         try:
+            # 检查是否在黑名单中
+            title = media_info.get('title')
+            series_name = media_info.get('series_name')
+            blacklist = load_blacklist()
+            
+            # 检查电影标题或电视剧名称是否在黑名单中
+            if (title and title in blacklist) or (series_name and series_name in blacklist):
+                blocked_title = title if title in blacklist else series_name
+                logger.info(f"🚫 {blocked_title} 在黑名单中，终止处理流程")
+                return
+            
             # 检查是否为重复播放事件
             if self._is_duplicate_play_event(media_info, cooldown_hours=self.config.webhook.play_event_cooldown_hours):
                 return  # 跳过重复处理

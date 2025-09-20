@@ -1305,7 +1305,7 @@ async def import_auto_keyword_input(update: Update, context: ContextTypes.DEFAUL
     
     if suggested_type:
         # TMDB建议了明确的类型
-        type_name = "📺 电视剧/动漫" if suggested_type == "tv_series" else "🎬 电影"
+        type_name = "电视剧/动漫" if suggested_type == "tv_series" else "电影"
         
         # 根据类型显示对应图标
         if suggested_type == "movie":
