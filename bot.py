@@ -663,7 +663,17 @@ async def init_bot() -> Application:
     except Exception as e:
         logger.error(f"❌ 识别词配置文件初始化异常: {e}")
 
-    # 步骤7: 设置webhook处理器的Bot实例
+    # 步骤7: 初始化黑名单配置文件
+    try:
+        from utils.blacklist_config import initialize_blacklist_config
+        if initialize_blacklist_config():
+            logger.info("✅ 黑名单配置文件初始化成功")
+        else:
+            logger.warning("⚠️ 黑名单配置文件初始化失败")
+    except Exception as e:
+        logger.error(f"❌ 黑名单配置文件初始化异常: {e}")
+
+    # 步骤8: 设置webhook处理器的Bot实例
     try:
         from handlers.webhook import set_bot_instance
         set_bot_instance(application.bot)
