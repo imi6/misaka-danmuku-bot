@@ -336,7 +336,8 @@ class WebhookHandler:
         """
         try:
             # 使用rate_limit模块检查限流状态
-            if should_block_by_rate_limit():
+            should_block, _ = should_block_by_rate_limit()
+            if should_block:
                 return
             
             # 检查是否在黑名单中

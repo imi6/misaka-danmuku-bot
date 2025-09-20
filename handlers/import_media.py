@@ -38,7 +38,7 @@ async def search_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
     should_block, seconds_until_reset = should_block_by_rate_limit()
     if should_block:
         seconds_text = str(seconds_until_reset) if seconds_until_reset is not None else "稍后"
-        await update.message.reply_text(f"🚫 当前系统处于流量控制状态，暂时无法执行搜索操作，请{seconds_text}秒后再试")
+        await update.message.reply_text(f"🚫 无法搜索，当前系统处于流控状态，请{seconds_text}秒后再试")
         return ConversationHandler.END
     
     # 1. 直接带参数（如：/search 海贼王）
@@ -108,7 +108,7 @@ async def import_auto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     should_block, seconds_until_reset = should_block_by_rate_limit()
     if should_block:
         seconds_text = str(seconds_until_reset) if seconds_until_reset is not None else "稍后"
-        await update.message.reply_text(f"🚫 当前系统处于流量控制状态，暂时无法执行自动导入操作，请{seconds_text}秒后再试")
+        await update.message.reply_text(f"🚫 无法自动导入，当前系统处于流控状态，请{seconds_text}秒后再试")
         return ConversationHandler.END
     
     # 检查是否有参数
