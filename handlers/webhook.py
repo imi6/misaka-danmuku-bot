@@ -335,13 +335,13 @@ class WebhookHandler:
         """
         try:
             # 检查是否在黑名单中
-            title = media_info.get('title')
+            title = media_info.get('original_title')
             series_name = media_info.get('series_name')
             blacklist = load_blacklist()
-            
-            # 检查电影标题或电视剧名称是否在黑名单中
-            if (title and title in blacklist) or (series_name and series_name in blacklist):
-                blocked_title = title if title in blacklist else series_name
+
+            # 检查电影标题或电视剧名称是否在黑名单中（不区分大小写，完全匹配）
+            if (title and title.lower() in blacklist) or (series_name and series_name.lower() in blacklist):
+                blocked_title = title if title.lower() in blacklist else series_name
                 logger.info(f"🚫 {blocked_title} 在黑名单中，终止处理流程")
                 return
             
