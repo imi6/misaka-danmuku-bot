@@ -15,6 +15,7 @@ from utils.api import call_danmaku_api
 from utils.security import mask_sensitive_data
 from utils.emby_name_converter import convert_emby_series_name
 from utils.blacklist_config import load_blacklist
+from utils.rate_limit import should_block_by_rate_limit
 
 logger = logging.getLogger(__name__)
 
@@ -334,6 +335,10 @@ class WebhookHandler:
             media_info: 媒体信息
         """
         try:
+            # 使用rate_limit模块检查限流状态
+            if should_block_by_rate_limit():
+                return
+            
             # 检查是否在黑名单中
             title = media_info.get('original_title')
             series_name = media_info.get('series_name')

@@ -11,6 +11,7 @@ from utils.tvdb_api import search_tvdb_by_slug, get_tvdb_tv_seasons
 from utils.imdb_scraper import get_imdb_info
 from utils.bgm_scraper import get_bgm_info
 from utils.emby_name_converter import convert_emby_series_name
+from utils.rate_limit import should_block_by_rate_limit
 
 # 初始化日志
 logger = logging.getLogger(__name__)
@@ -33,6 +34,13 @@ IMPORT_AUTO_SEASON_SELECTION = 4  # 季度选择状态
 @check_user_permission
 async def search_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """搜索媒体：支持直接带关键词或后续输入"""
+    # 检查流控状态
+    should_block, seconds_until_reset = should_block_by_rate_limit()
+    if should_block:
+        seconds_text = str(seconds_until_reset) if seconds_until_reset is not None else "稍后"
+        await update.message.reply_text(f"🚫 当前系统处于流量控制状态，暂时无法执行搜索操作，请{seconds_text}秒后再试")
+        return ConversationHandler.END
+    
     # 1. 直接带参数（如：/search 海贼王）
     if context.args:
         keyword = " ".join(context.args)
@@ -96,6 +104,13 @@ async def process_search_media(update: Update, keyword: str, context: ContextTyp
 @check_user_permission
 async def import_auto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """自动导入命令：支持直接带参数或显示选择界面"""
+    # 检查流控状态
+    should_block, seconds_until_reset = should_block_by_rate_limit()
+    if should_block:
+        seconds_text = str(seconds_until_reset) if seconds_until_reset is not None else "稍后"
+        await update.message.reply_text(f"🚫 当前系统处于流量控制状态，暂时无法执行自动导入操作，请{seconds_text}秒后再试")
+        return ConversationHandler.END
+    
     # 检查是否有参数
     if context.args:
         # 有参数：直接处理输入
