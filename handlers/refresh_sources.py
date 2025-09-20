@@ -517,6 +517,10 @@ async def cancel_refresh(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ 刷新操作已取消")
     return ConversationHandler.END
 
+async def restart_refresh(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """在对话中重新开始刷新操作"""
+    return await refresh_command(update, context)
+
 async def handle_refresh_from_library(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理从弹幕库中选择的回调"""
     query = update.callback_query
@@ -634,7 +638,17 @@ def create_refresh_handler():
             ]
         },
         fallbacks=[
-            CommandHandler('cancel', cancel_refresh)
+            CommandHandler('cancel', cancel_refresh),
+            CommandHandler('start', cancel_refresh),
+            CommandHandler('help', cancel_refresh),
+            CommandHandler('search', cancel_refresh),
+            CommandHandler('auto', cancel_refresh),
+            CommandHandler('url', cancel_refresh),
+            CommandHandler('refresh', restart_refresh),
+            CommandHandler('tokens', cancel_refresh),
+            CommandHandler('tasks', cancel_refresh),
+            CommandHandler('users', cancel_refresh),
+            CommandHandler('identify', cancel_refresh),
         ],
         allow_reentry=True
     )

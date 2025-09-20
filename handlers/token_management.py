@@ -138,6 +138,10 @@ async def cancel_token_operation(update: Update, context: ContextTypes.DEFAULT_T
     await update.message.reply_text("❌ 操作已取消")
     return ConversationHandler.END
 
+async def restart_token_operation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """在对话中重新开始token操作"""
+    return await show_tokens_list(update, context)
+
 def create_token_management_handler():
     """创建token管理命令处理器"""
     from callback.token_management import handle_token_callback_query
@@ -158,6 +162,16 @@ def create_token_management_handler():
         },
         fallbacks=[
             CommandHandler('cancel', cancel_token_operation),
+            CommandHandler('start', cancel_token_operation),
+            CommandHandler('help', cancel_token_operation),
+            CommandHandler('search', cancel_token_operation),
+            CommandHandler('auto', cancel_token_operation),
+            CommandHandler('url', cancel_token_operation),
+            CommandHandler('refresh', cancel_token_operation),
+            CommandHandler('tokens', restart_token_operation),
+            CommandHandler('tasks', cancel_token_operation),
+            CommandHandler('users', cancel_token_operation),
+            CommandHandler('identify', cancel_token_operation),
             CallbackQueryHandler(handle_token_callback_query, pattern=r'^(toggle_token:|delete_token:|confirm_delete:|cancel_delete)')
         ],
         allow_reentry=True
