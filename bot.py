@@ -282,19 +282,6 @@ def _setup_handlers(application, handlers_module, callback_module):
     handle_search_type_callback = callback_module.handle_search_type_callback
     handle_media_type_callback = callback_module.handle_media_type_callback
     
-    # 导入URL相关处理器函数
-    from handlers.import_url import import_url_start
-    # 导入refresh相关处理器函数
-    from handlers.refresh_sources import refresh_command
-    # 导入token管理相关处理器函数
-    from handlers.token_management import show_tokens_list
-    # 导入tasks相关处理器函数
-    from handlers.tasks import tasks_command
-    # 导入用户管理相关处理器函数
-    from handlers.user_management import show_users_list
-    # 导入identify管理相关处理器函数
-    from handlers.identify_management import identify_command
-    
     # 导入import_url处理器
     from handlers.import_url import create_import_url_handler
     
@@ -330,12 +317,6 @@ def _setup_handlers(application, handlers_module, callback_module):
             CommandHandler("auto", _wrap_conversation_entry_point(import_auto)),
             CommandHandler("start", _wrap_with_session_management(start)),
             CommandHandler("help", _wrap_with_session_management(help_command)),
-            CommandHandler("url", _wrap_conversation_entry_point(import_url_start)),
-            CommandHandler("refresh", _wrap_conversation_entry_point(refresh_command)),
-            CommandHandler("tokens", _wrap_conversation_entry_point(show_tokens_list)),
-            CommandHandler("tasks", _wrap_conversation_entry_point(tasks_command)),
-            CommandHandler("users", _wrap_conversation_entry_point(show_users_list)),
-            CommandHandler("identify", _wrap_conversation_entry_point(identify_command))
         ],
     )
     application.add_handler(search_handler)
@@ -360,17 +341,10 @@ def _setup_handlers(application, handlers_module, callback_module):
             ],
         },
         fallbacks=[
-            CommandHandler("cancel", _wrap_with_session_management(cancel_episode_input)),
             CommandHandler("search", _wrap_conversation_entry_point(search_media)),
             CommandHandler("auto", _wrap_conversation_entry_point(import_auto)),
             CommandHandler("start", _wrap_with_session_management(start)),
-            CommandHandler("help", _wrap_with_session_management(help_command)),
-            CommandHandler("url", _wrap_conversation_entry_point(import_url_start)),
-            CommandHandler("refresh", _wrap_conversation_entry_point(refresh_command)),
-            CommandHandler("tokens", _wrap_conversation_entry_point(show_tokens_list)),
-            CommandHandler("tasks", _wrap_conversation_entry_point(tasks_command)),
-            CommandHandler("users", _wrap_conversation_entry_point(show_users_list)),
-            CommandHandler("identify", _wrap_conversation_entry_point(identify_command))
+            CommandHandler("help", _wrap_with_session_management(help_command))
         ],
         # 使用默认的 per_* 设置以避免混合处理器类型的警告
         per_chat=True,   # 每个聊天独立跟踪对话状态
@@ -439,17 +413,10 @@ def _setup_handlers(application, handlers_module, callback_module):
             # )],
         },
         fallbacks=[
-            CommandHandler("cancel", _wrap_with_session_management(cancel)),
             CommandHandler("search", _wrap_conversation_entry_point(search_media)),
             CommandHandler("auto", _wrap_conversation_entry_point(import_auto)),
             CommandHandler("start", _wrap_with_session_management(start)),
-            CommandHandler("help", _wrap_with_session_management(help_command)),
-            CommandHandler("url", _wrap_conversation_entry_point(import_url_start)),
-            CommandHandler("refresh", _wrap_conversation_entry_point(refresh_command)),
-            CommandHandler("tokens", _wrap_conversation_entry_point(show_tokens_list)),
-            CommandHandler("tasks", _wrap_conversation_entry_point(tasks_command)),
-            CommandHandler("users", _wrap_conversation_entry_point(show_users_list)),
-            CommandHandler("identify", _wrap_conversation_entry_point(identify_command))
+            CommandHandler("help", _wrap_with_session_management(help_command))
         ],
         allow_reentry=True,  # 允许重新进入对话
         # 使用默认的 per_* 设置以避免混合处理器类型的警告
@@ -592,17 +559,10 @@ def _setup_handlers(application, handlers_module, callback_module):
             ],
         },
         fallbacks=[
-            CommandHandler("cancel", _wrap_with_session_management(identify_cancel)),
             CommandHandler("search", _wrap_conversation_entry_point(search_media)),
             CommandHandler("auto", _wrap_conversation_entry_point(import_auto)),
             CommandHandler("start", _wrap_with_session_management(start)),
-            CommandHandler("help", _wrap_with_session_management(help_command)),
-            CommandHandler("url", _wrap_conversation_entry_point(import_url_start)),
-            CommandHandler("refresh", _wrap_conversation_entry_point(refresh_command)),
-            CommandHandler("tokens", _wrap_conversation_entry_point(show_tokens_list)),
-            CommandHandler("tasks", _wrap_conversation_entry_point(tasks_command)),
-            CommandHandler("users", _wrap_conversation_entry_point(show_users_list)),
-            CommandHandler("identify", _wrap_conversation_entry_point(identify_command))
+            CommandHandler("help", _wrap_with_session_management(help_command))
         ],
         per_chat=True,
         per_user=True,

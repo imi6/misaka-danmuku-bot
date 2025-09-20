@@ -277,10 +277,6 @@ async def cancel_user_management(update: Update, context: ContextTypes.DEFAULT_T
     return ConversationHandler.END
 
 
-async def restart_user_management(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """在对话中重新开始用户操作"""
-    return await show_users_list(update, context)
-
 def create_user_management_handler():
     """创建用户管理ConversationHandler"""
     return ConversationHandler(
@@ -305,17 +301,7 @@ def create_user_management_handler():
             ]
         },
         fallbacks=[
-            CommandHandler('cancel', cancel_user_management),
-            CommandHandler('start', cancel_user_management),
-            CommandHandler('help', cancel_user_management),
-            CommandHandler('search', cancel_user_management),
-            CommandHandler('auto', cancel_user_management),
-            CommandHandler('url', cancel_user_management),
-            CommandHandler('refresh', cancel_user_management),
-            CommandHandler('tokens', cancel_user_management),
-            CommandHandler('tasks', cancel_user_management),
-            CommandHandler('users', restart_user_management),
-            CommandHandler('identify', cancel_user_management),
+            CommandHandler('cancel', cancel_user_management)
         ],
         per_chat=True,
         per_user=True
