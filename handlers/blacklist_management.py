@@ -100,6 +100,10 @@ def create_blacklist_handler():
     """
     创建黑名单管理ConversationHandler
     """
+    # 避免循环导入，在函数内部导入
+    from bot import _wrap_conversation_entry_point
+    from bot import _wrap_with_session_management
+    
     return ConversationHandler(
         entry_points=[CommandHandler("blacklist", _wrap_conversation_entry_point(blacklist_command))],
         states={
@@ -112,32 +116,11 @@ def create_blacklist_handler():
         },
         fallbacks=[
             CommandHandler("cancel", _wrap_with_session_management(blacklist_cancel)),
-            CommandHandler("search", _wrap_conversation_entry_point(search_media)),
-            CommandHandler("auto", _wrap_conversation_entry_point(import_auto)),
-            CommandHandler("start", _wrap_with_session_management(start)),
-            CommandHandler("help", _wrap_with_session_management(help_command)),
-            CommandHandler("url", _wrap_conversation_entry_point(import_url_start)),
-            CommandHandler("refresh", _wrap_conversation_entry_point(refresh_command)),
-            CommandHandler("tokens", _wrap_conversation_entry_point(show_tokens_list)),
-            CommandHandler("tasks", _wrap_conversation_entry_point(tasks_command)),
-            CommandHandler("users", _wrap_conversation_entry_point(show_users_list)),
-            CommandHandler("identify", _wrap_conversation_entry_point(identify_command)),
-            CommandHandler("blacklist", _wrap_conversation_entry_point(blacklist_command))
+            CommandHandler("start", _wrap_with_session_management(blacklist_cancel)),
+            CommandHandler("help", _wrap_with_session_management(blacklist_cancel)),
+            CommandHandler("search", _wrap_with_session_management(blacklist_cancel)),
+            CommandHandler("auto", _wrap_with_session_management(blacklist_cancel))
         ],
         per_chat=True,
         per_user=True,
     )
-
-# 从其他模块导入所需的函数
-from bot import _wrap_conversation_entry_point
-from bot import _wrap_with_session_management
-from handlers.import_media import search_media
-from handlers.import_media import import_auto
-from handlers.general import start
-from handlers.general import help_command
-from handlers.import_url import import_url_start
-from handlers.refresh_sources import refresh_command
-from handlers.token_management import show_tokens_list
-from handlers.tasks import tasks_command
-from handlers.user_management import show_users_list
-from handlers.identify_management import identify_command
