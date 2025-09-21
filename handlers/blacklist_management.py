@@ -101,26 +101,26 @@ def create_blacklist_handler():
     创建黑名单管理ConversationHandler
     """
     # 避免循环导入，在函数内部导入
-    from bot import _wrap_conversation_entry_point
-    from bot import _wrap_with_session_management
+    from utils.handlers_utils import wrap_conversation_entry_point
+    from utils.handlers_utils import wrap_with_session_management
     
     return ConversationHandler(
-        entry_points=[CommandHandler("blacklist", _wrap_conversation_entry_point(blacklist_command))],
+        entry_points=[CommandHandler("blacklist", wrap_conversation_entry_point(blacklist_command))],
         states={
             BLACKLIST_NAME_INPUT: [
                 MessageHandler(
                     filters.TEXT & ~filters.COMMAND,
-                    _wrap_with_session_management(blacklist_name_input)
+                    wrap_with_session_management(blacklist_name_input)
                 ),
-                CommandHandler("blacklist", _wrap_conversation_entry_point(blacklist_command))
+                CommandHandler("blacklist", wrap_conversation_entry_point(blacklist_command))
             ],
         },
         fallbacks=[
-            CommandHandler("cancel", _wrap_with_session_management(blacklist_cancel)),
-            CommandHandler("start", _wrap_with_session_management(blacklist_cancel)),
-            CommandHandler("help", _wrap_with_session_management(blacklist_cancel)),
-            CommandHandler("search", _wrap_with_session_management(blacklist_cancel)),
-            CommandHandler("auto", _wrap_with_session_management(blacklist_cancel))
+            CommandHandler("cancel", wrap_with_session_management(blacklist_cancel)),
+            CommandHandler("start", wrap_with_session_management(blacklist_cancel)),
+            CommandHandler("help", wrap_with_session_management(blacklist_cancel)),
+            CommandHandler("search", wrap_with_session_management(blacklist_cancel)),
+            CommandHandler("auto", wrap_with_session_management(blacklist_cancel))
         ],
         per_chat=True,
         per_user=True,

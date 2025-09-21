@@ -1,8 +1,8 @@
-import json
 import logging
+import json
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import BadRequest
-from telegram.ext import ContextTypes, ConversationHandler
+from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, CallbackQueryHandler, MessageHandler, filters
 from utils.api import call_danmaku_api
 from utils.permission import check_user_permission
 from utils.url_parser import determine_input_type
@@ -12,6 +12,10 @@ from utils.imdb_scraper import get_imdb_info
 from utils.bgm_scraper import get_bgm_info
 from utils.emby_name_converter import convert_emby_series_name
 from utils.rate_limit import should_block_by_rate_limit
+from utils.handlers_utils import wrap_conversation_entry_point, wrap_with_session_management
+from utils.handlers_fallbacks import get_global_fallbacks
+from callback.import_media import handle_get_episode_callback, handle_episode_range_input, cancel_episode_input, handle_search_type_callback, handle_media_type_callback, handle_import_auto_callback
+from handlers.general import cancel
 
 # 初始化日志
 logger = logging.getLogger(__name__)
@@ -1574,8 +1578,17 @@ async def import_auto_id_input(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 
-
 # 已移除import_auto_season_input和import_auto_episode_input函数，因为不再需要分季导入和分集导入功能
+
+
+# 对话状态常量 - 用于处理器创建函数
+SEARCH_MEDIA = 0
+SEARCH_RESULTS = 1
+INPUT_EPISODE_RANGE = 2
+IMPORT_AUTO_SEARCH_TYPE = 1
+IMPORT_AUTO_KEYWORD_INPUT = 2
+IMPORT_AUTO_ID_INPUT = 3
+IMPORT_AUTO_SEASON_SELECTION = 4
 
 
 async def send_message_safe(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, **kwargs):
@@ -1737,6 +1750,102 @@ async def show_import_options(update: Update, context: ContextTypes.DEFAULT_TYPE
             del params["season"]
         await call_import_auto_api(update, context, params)
         return ConversationHandler.END
+
+
+# ===== 处理器创建函数 =====
+
+def create_search_handler():
+    """创建搜索媒体对话处理器"""
+    return ConversationHandler(
+        entry_points=[CommandHandler("search", wrap_conversation_entry_point(search_media))],
+        states={
+            SEARCH_MEDIA: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND, 
+                    wrap_with_session_management(search_media_input)
+                )
+            ],
+            SEARCH_RESULTS: [
+                # 在搜索结果状态下，用户可以点击按钮或取消
+                # 按钮点击由独立的CallbackQueryHandler处理
+                CommandHandler("cancel", wrap_with_session_management(cancel))
+            ],
+        },
+        fallbacks=get_global_fallbacks(),
+    )
+
+
+def create_import_auto_handler():
+    """创建自动导入媒体对话处理器"""
+    return ConversationHandler(
+        entry_points=[CommandHandler("auto", wrap_conversation_entry_point(import_auto))],
+        states={
+            IMPORT_AUTO_SEARCH_TYPE: [CallbackQueryHandler(  
+                wrap_with_session_management(handle_search_type_callback)
+            )],
+            IMPORT_AUTO_KEYWORD_INPUT: [
+                MessageHandler(  
+                    filters.TEXT & ~filters.COMMAND,
+                    wrap_with_session_management(import_auto_keyword_input)
+                ),
+                CallbackQueryHandler(wrap_with_session_management(handle_media_type_callback)),
+                CallbackQueryHandler(  # Handle all import_auto related callbacks
+                    wrap_with_session_management(handle_import_auto_callback),
+                    pattern=r'{"action": "import_auto_.*"}'
+                )
+            ],
+            IMPORT_AUTO_ID_INPUT: [
+                MessageHandler(  
+                    filters.TEXT & ~filters.COMMAND,
+                    wrap_with_session_management(import_auto_id_input)
+                ),
+                CallbackQueryHandler(  # Handle all import_auto related callbacks
+                    wrap_with_session_management(handle_import_auto_callback),
+                    pattern=r'{"action": "import_auto_.*"}'
+                )
+            ],
+            IMPORT_AUTO_SEASON_SELECTION: [  
+                CallbackQueryHandler(
+                    wrap_with_session_management(handle_import_auto_callback),
+                    pattern=r'(season_\d+|cancel|{"action": "import_auto_.*"})'
+                )
+            ],
+        },
+        fallbacks=get_global_fallbacks(),
+        allow_reentry=True,  # 允许重新进入对话
+        # 使用默认的 per_* 设置以避免混合处理器类型的警告
+        per_chat=True,       # 每个聊天独立跟踪对话状态
+        per_user=True,       # 每个用户独立跟踪对话状态
+    )
+
+
+def create_episode_input_handler():
+    """创建集数输入对话处理器"""
+    # 集数输入状态常量
+    INPUT_EPISODE_RANGE = 1
+    
+    return ConversationHandler(
+        entry_points=[CallbackQueryHandler(
+            wrap_with_session_management(handle_get_episode_callback),
+            pattern=r'{"(action|a)": "(start_input_range|get_episodes|get_media_episode|switch_episode_page)".*}'
+        )],  # 通过"输入集数区间"回调按钮、"获取分集"按钮或分页按钮触发
+        states={
+            INPUT_EPISODE_RANGE: [
+                MessageHandler(  
+                    filters.TEXT & ~filters.COMMAND,
+                    wrap_with_session_management(handle_episode_range_input)
+                ),
+                CallbackQueryHandler(  # 处理分页按钮回调
+                    wrap_with_session_management(handle_get_episode_callback),
+                    pattern=r'^.*"switch_episode_page".*$'
+                )
+            ],
+        },
+        fallbacks=get_global_fallbacks(),
+        # 使用默认的 per_* 设置以避免混合处理器类型的警告
+        per_chat=True,   # 每个聊天独立跟踪对话状态
+        per_user=True,   # 每个用户独立跟踪对话状态
+    )
 
 
 async def call_import_auto_api(update: Update, context: ContextTypes.DEFAULT_TYPE, params: dict):
