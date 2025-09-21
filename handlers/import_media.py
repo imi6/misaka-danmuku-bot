@@ -1754,6 +1754,10 @@ def create_search_handler():
             ],
         },
         fallbacks=get_global_fallbacks(),
+        per_chat=True,
+        per_user=True,
+        allow_reentry=True,
+        persistent=False
     )
 
 
@@ -1802,7 +1806,7 @@ def create_import_auto_handler():
 
 
 def create_episode_input_handler():
-    """创建集数输入对话处理器"""    
+    """创建集数输入对话处理器"""
     
     return ConversationHandler(
         entry_points=[CallbackQueryHandler(
@@ -1825,6 +1829,8 @@ def create_episode_input_handler():
         # 使用默认的 per_* 设置以避免混合处理器类型的警告
         per_chat=True,   # 每个聊天独立跟踪对话状态
         per_user=True,   # 每个用户独立跟踪对话状态
+        allow_reentry=True,
+        persistent=False
     )
 
 

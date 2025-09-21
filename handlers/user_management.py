@@ -5,6 +5,7 @@ from config import ConfigManager
 from utils.permission import check_admin_permission
 from utils.conversation_states import USER_ID_INPUT, CONFIRM_ACTION
 from utils.handlers_utils import wrap_conversation_entry_point
+from utils.handlers_fallbacks import get_global_fallbacks
 
 logger = logging.getLogger(__name__)
 
@@ -298,9 +299,9 @@ def create_user_management_handler():
                 CommandHandler("users", wrap_conversation_entry_point(users_command))
             ]
         },
-        fallbacks=[
-            CommandHandler('cancel', cancel_user_management)
-        ],
+        fallbacks=get_global_fallbacks(),
         per_chat=True,
-        per_user=True
+        per_user=True,
+        allow_reentry=True,
+        persistent=False
     )

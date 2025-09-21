@@ -9,6 +9,7 @@ from utils.title_extractor import extract_show_title_from_h1
 from utils.rate_limit import should_block_by_rate_limit
 from utils.conversation_states import URL_INPUT, KEYWORD_INPUT, ANIME_SELECT, SOURCE_SELECT, EPISODE_INPUT
 from utils.handlers_utils import wrap_conversation_entry_point
+from utils.handlers_fallbacks import get_global_fallbacks
 
 logger = logging.getLogger(__name__)
 
@@ -881,13 +882,10 @@ def create_import_url_handler():
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_episode_input),
             ],
         },
-        fallbacks=[
-            CommandHandler('cancel', cancel_import_url),
-            CommandHandler('start', cancel_import_url),
-            CommandHandler('help', cancel_import_url),
-            CommandHandler('search', cancel_import_url),
-            CommandHandler('auto', cancel_import_url),
-        ],
+        fallbacks=get_global_fallbacks(),
         name='import_url_conversation',
+        per_chat=True,
+        per_user=True,
+        allow_reentry=True,
         persistent=False,
     )

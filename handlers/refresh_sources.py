@@ -616,6 +616,7 @@ def create_refresh_handler():
     """创建刷新命令处理器"""
     from callback.refresh_sources import handle_refresh_callback_query
     from utils.handlers_utils import wrap_conversation_entry_point
+    from utils.handlers_fallbacks import get_global_fallbacks
     
     return ConversationHandler(
         entry_points=[
@@ -640,8 +641,9 @@ def create_refresh_handler():
                 CallbackQueryHandler(handle_refresh_callback_query, pattern=r'^refresh_episodes_page_\d+$')
             ]
         },
-        fallbacks=[
-            CommandHandler('cancel', cancel_refresh)
-        ],
-        allow_reentry=True
+        fallbacks=get_global_fallbacks(),
+        per_chat=True,
+        per_user=True,
+        allow_reentry=True,
+        persistent=False
     )

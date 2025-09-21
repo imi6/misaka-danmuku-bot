@@ -297,4 +297,6 @@ def create_identify_handler():
         fallbacks=get_global_fallbacks(),
         per_chat=True,
         per_user=True,
+        allow_reentry=True,
+        persistent=False
     )

@@ -94,13 +94,12 @@ async def blacklist_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     
     return ConversationHandler.END
 
-def create_blacklist_handler():    
-    """
-    创建黑名单管理ConversationHandler
-    """
+def create_blacklist_handler():
+    """创建黑名单管理对话处理器"""
     # 避免循环导入，在函数内部导入
     from utils.handlers_utils import wrap_conversation_entry_point
     from utils.handlers_utils import wrap_with_session_management
+    from utils.handlers_fallbacks import get_global_fallbacks
     
     return ConversationHandler(
         entry_points=[CommandHandler("blacklist", wrap_conversation_entry_point(blacklist_command))],
@@ -113,13 +112,9 @@ def create_blacklist_handler():
                 CommandHandler("blacklist", wrap_conversation_entry_point(blacklist_command))
             ],
         },
-        fallbacks=[
-            CommandHandler("cancel", wrap_with_session_management(blacklist_cancel)),
-            CommandHandler("start", wrap_with_session_management(blacklist_cancel)),
-            CommandHandler("help", wrap_with_session_management(blacklist_cancel)),
-            CommandHandler("search", wrap_with_session_management(blacklist_cancel)),
-            CommandHandler("auto", wrap_with_session_management(blacklist_cancel))
-        ],
+        fallbacks=get_global_fallbacks(),
         per_chat=True,
         per_user=True,
+        allow_reentry=True,
+        persistent=False
     )

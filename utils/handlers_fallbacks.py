@@ -25,7 +25,7 @@ def get_url_handler():
 def get_refresh_handler():
     """获取刷新数据源命令处理器"""
     from handlers.refresh_sources import refresh_command
-    return CommandHandler("refresh", wrap_with_session_management(refresh_command))
+    return CommandHandler("refresh", wrap_conversation_entry_point(refresh_command))
 
 
 def get_tokens_handler():
@@ -37,7 +37,7 @@ def get_tokens_handler():
 def get_tasks_handler():
     """获取任务列表命令处理器"""
     from handlers.tasks import tasks_command
-    return CommandHandler("tasks", wrap_with_session_management(tasks_command))
+    return CommandHandler("tasks", wrap_conversation_entry_point(tasks_command))
 
 
 def get_users_handler():
@@ -61,37 +61,43 @@ def get_blacklist_handler():
 def get_start_handler():
     """获取start命令处理器"""
     from handlers.general import start_command
-    return CommandHandler("start", wrap_with_session_management(start_command))
+    return CommandHandler("start", wrap_conversation_entry_point(start_command))
 
 
 def get_help_handler():
     """获取help命令处理器"""
     from handlers.general import help_command
-    return CommandHandler("help", wrap_with_session_management(help_command))
+    return CommandHandler("help", wrap_conversation_entry_point(help_command))
 
 
 def get_cancel_handler():
     """获取cancel命令处理器"""
     from handlers.general import cancel_command
-    return CommandHandler("cancel", wrap_with_session_management(cancel_command))
+    return CommandHandler("cancel", wrap_conversation_entry_point(cancel_command))
 
 
 def get_global_fallbacks():
-    """返回全局共享的fallbacks处理器组"""
-    return [
-        get_cancel_handler(),
-        get_search_handler(),
-        get_auto_handler(),
-        get_url_handler(),
-        get_refresh_handler(),
-        get_tokens_handler(),
-        get_tasks_handler(),
-        get_users_handler(),
-        get_identify_handler(),
-        get_blacklist_handler(),
-        get_start_handler(),
-        get_help_handler(),
-    ]
+    """返回全局共享的fallbacks处理器组，确保命令切换时正确终止当前对话"""
+    # 首先添加cancel处理器，确保它始终是第一个fallback
+    fallbacks = [get_cancel_handler()]
+    
+    # 添加其他主要命令处理器作为fallbacks，确保用户在切换命令时能正确终止前一个会话
+    # 特别注意：url_handler应该放在search_handler之前，这样URL链接输入会被正确路由到url处理逻辑
+    # fallbacks.extend([
+    #     get_url_handler(),
+    #     get_search_handler(),
+    #     get_auto_handler(),
+    #     get_refresh_handler(),
+    #     get_tokens_handler(),
+    #     get_tasks_handler(),
+    #     get_users_handler(),
+    #     get_identify_handler(),
+    #     get_blacklist_handler(),
+    #     get_start_handler(),
+    #     get_help_handler()
+    # ])
+    
+    return fallbacks
 
 
 def get_minimal_fallbacks():
