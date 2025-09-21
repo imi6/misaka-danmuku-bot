@@ -1,5 +1,5 @@
 # 从各个模块导入所需的处理器创建函数和命令处理函数
-from .general import start, help_command, cancel
+from .general import start_command, help_command, cancel_command
 from .import_media import create_search_handler, create_import_auto_handler, create_episode_input_handler
 from .identify_management import create_identify_handler
 from .token_management import create_token_management_handler
@@ -50,11 +50,13 @@ def get_blacklist_handler():
 
 def get_help_handler():
     """显示帮助信息 (/help)"""
-    return CommandHandler("help", help_command)
+    from utils.handlers_utils import wrap_conversation_entry_point
+    return CommandHandler("help", wrap_conversation_entry_point(help_command))
 
 def get_cancel_handler():
     """提供取消当前操作的功能 (/cancel)"""
-    return CommandHandler("cancel", cancel)
+    from utils.handlers_utils import wrap_conversation_entry_point
+    return CommandHandler("cancel", wrap_conversation_entry_point(cancel_command))
 
 # 导出所有需要注册的处理器和功能方法
 __all__ = [

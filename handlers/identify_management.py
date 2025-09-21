@@ -8,14 +8,9 @@ from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, Mess
 from utils.permission import check_user_permission, is_admin
 from utils.handlers_utils import wrap_conversation_entry_point, wrap_with_session_management
 from utils.handlers_fallbacks import get_global_fallbacks
+from utils.conversation_states import IDENTIFY_ORIGINAL_NAME, IDENTIFY_ORIGINAL_SEASON, IDENTIFY_TARGET_NAME, IDENTIFY_TARGET_SEASON
 
 logger = logging.getLogger(__name__)
-
-# 对话状态常量
-IDENTIFY_ORIGINAL_NAME = 0
-IDENTIFY_ORIGINAL_SEASON = 1
-IDENTIFY_TARGET_NAME = 2
-IDENTIFY_TARGET_SEASON = 3
 
 @check_user_permission
 async def identify_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:

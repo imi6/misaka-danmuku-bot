@@ -6,11 +6,9 @@ from telegram import Update, ReplyKeyboardRemove
 from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, MessageHandler, filters
 from utils.permission import check_user_permission, is_admin
 from utils.blacklist_config import add_blacklist_item, load_blacklist, get_blacklist_stats
+from utils.conversation_states import BLACKLIST_NAME_INPUT
 
 logger = logging.getLogger(__name__)
-
-# 对话状态常量
-BLACKLIST_NAME_INPUT = 0
 
 @check_user_permission
 async def blacklist_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:

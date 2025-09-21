@@ -251,7 +251,7 @@ from handlers.import_media import (
 from handlers.identify_management import create_identify_handler
 
 # 从handlers模块导入通用处理器
-from handlers.general import start, help_command, cancel
+from handlers.general import start_command, help_command, cancel_command
 
 # 从utils目录导入工具函数
 from utils.handlers_fallbacks import get_global_fallbacks, get_minimal_fallbacks
@@ -318,9 +318,9 @@ def _setup_handlers(application, handlers_module, callback_module):
     current_handlers["blacklist_handler"] = blacklist_handler
     
     # 3. 注册通用命令处理器
-    start_handler = CommandHandler("start", wrap_with_session_management(start))
+    start_handler = CommandHandler("start", wrap_with_session_management(start_command))
     help_handler = CommandHandler("help", wrap_with_session_management(help_command))
-    cancel_handler = CommandHandler("cancel", wrap_with_session_management(cancel))
+    cancel_handler = CommandHandler("cancel", wrap_with_session_management(cancel_command))
     
     application.add_handler(start_handler)
     application.add_handler(help_handler)

@@ -1,5 +1,6 @@
 import logging
 import json
+import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import BadRequest
 from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, CallbackQueryHandler, MessageHandler, filters
@@ -15,28 +16,15 @@ from utils.rate_limit import should_block_by_rate_limit
 from utils.handlers_utils import wrap_conversation_entry_point, wrap_with_session_management
 from utils.handlers_fallbacks import get_global_fallbacks
 from callback.import_media import handle_get_episode_callback, handle_episode_range_input, cancel_episode_input, handle_search_type_callback, handle_media_type_callback, handle_import_auto_callback
-from handlers.general import cancel
+from handlers.general import cancel_command
+from utils.conversation_states import SEARCH_MEDIA, SEARCH_RESULTS, INPUT_EPISODE_RANGE, IMPORT_AUTO_SEARCH_TYPE, IMPORT_AUTO_KEYWORD_INPUT, IMPORT_AUTO_ID_INPUT, IMPORT_AUTO_SEASON_SELECTION, CALLBACK_DATA_MAX_LEN, EPISODES_PER_PAGE
 
 # 初始化日志
 logger = logging.getLogger(__name__)
-# 对话状态（仅保留搜索相关）
-SEARCH_MEDIA = 0
-SEARCH_RESULTS = 1  # 搜索结果展示状态，等待用户点击按钮
-EPISODES_PER_PAGE = 10  # 每页显示分集数量
-INPUT_EPISODE_RANGE = 2  # 集数输入对话状态
-CALLBACK_DATA_MAX_LEN = 60
-
-# import_auto 对话状态
-IMPORT_AUTO_KEYWORD_INPUT = 2  # 关键词输入状态
-IMPORT_AUTO_ID_INPUT = 3  # ID输入状态
-IMPORT_AUTO_SEASON_SELECTION = 4  # 季度选择状态
-# IMPORT_AUTO_SEASON_INPUT = 4  # 季度输入状态（已移除）
-# IMPORT_AUTO_EPISODE_INPUT = 5  # 分集输入状态（已移除）
-# IMPORT_AUTO_METHOD_SELECTION = 6  # 导入方式选择状态（已移除） 
 
 
 @check_user_permission
-async def search_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """搜索媒体：支持直接带关键词或后续输入"""
     # 检查流控状态
     should_block, seconds_until_reset = should_block_by_rate_limit()
@@ -106,7 +94,7 @@ async def process_search_media(update: Update, keyword: str, context: ContextTyp
 
 
 @check_user_permission
-async def import_auto(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def auto_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """自动导入命令：支持直接带参数或显示选择界面"""
     # 检查流控状态
     should_block, seconds_until_reset = should_block_by_rate_limit()
@@ -1581,14 +1569,8 @@ async def import_auto_id_input(update: Update, context: ContextTypes.DEFAULT_TYP
 # 已移除import_auto_season_input和import_auto_episode_input函数，因为不再需要分季导入和分集导入功能
 
 
-# 对话状态常量 - 用于处理器创建函数
-SEARCH_MEDIA = 0
-SEARCH_RESULTS = 1
-INPUT_EPISODE_RANGE = 2
-IMPORT_AUTO_SEARCH_TYPE = 1
-IMPORT_AUTO_KEYWORD_INPUT = 2
-IMPORT_AUTO_ID_INPUT = 3
-IMPORT_AUTO_SEASON_SELECTION = 4
+# 所有对话状态常量已移至 utils/conversation_states.py
+# 当前文件已从该模块导入所需的所有常量
 
 
 async def send_message_safe(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, **kwargs):
@@ -1757,7 +1739,7 @@ async def show_import_options(update: Update, context: ContextTypes.DEFAULT_TYPE
 def create_search_handler():
     """创建搜索媒体对话处理器"""
     return ConversationHandler(
-        entry_points=[CommandHandler("search", wrap_conversation_entry_point(search_media))],
+        entry_points=[CommandHandler("search", wrap_conversation_entry_point(search_command))],
         states={
             SEARCH_MEDIA: [
                 MessageHandler(
@@ -1768,7 +1750,7 @@ def create_search_handler():
             SEARCH_RESULTS: [
                 # 在搜索结果状态下，用户可以点击按钮或取消
                 # 按钮点击由独立的CallbackQueryHandler处理
-                CommandHandler("cancel", wrap_with_session_management(cancel))
+                CommandHandler("cancel", wrap_with_session_management(cancel_command))
             ],
         },
         fallbacks=get_global_fallbacks(),
@@ -1778,7 +1760,7 @@ def create_search_handler():
 def create_import_auto_handler():
     """创建自动导入媒体对话处理器"""
     return ConversationHandler(
-        entry_points=[CommandHandler("auto", wrap_conversation_entry_point(import_auto))],
+        entry_points=[CommandHandler("auto", wrap_conversation_entry_point(auto_command))],
         states={
             IMPORT_AUTO_SEARCH_TYPE: [CallbackQueryHandler(  
                 wrap_with_session_management(handle_search_type_callback)
@@ -1820,9 +1802,7 @@ def create_import_auto_handler():
 
 
 def create_episode_input_handler():
-    """创建集数输入对话处理器"""
-    # 集数输入状态常量
-    INPUT_EPISODE_RANGE = 1
+    """创建集数输入对话处理器"""    
     
     return ConversationHandler(
         entry_points=[CallbackQueryHandler(

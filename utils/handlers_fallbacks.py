@@ -6,20 +6,20 @@ from telegram.ext import CommandHandler
 def get_search_handler():
     """获取搜索媒体命令处理器"""
     # 懒导入以避免循环依赖
-    from handlers.import_media import search_media
-    return CommandHandler("search", wrap_conversation_entry_point(search_media))
+    from handlers.import_media import search_command
+    return CommandHandler("search", wrap_conversation_entry_point(search_command))
 
 
 def get_auto_handler():
     """获取自动导入命令处理器"""
-    from handlers.import_media import import_auto
-    return CommandHandler("auto", wrap_conversation_entry_point(import_auto))
+    from handlers.import_media import auto_command
+    return CommandHandler("auto", wrap_conversation_entry_point(auto_command))
 
 
 def get_url_handler():
     """获取URL导入命令处理器"""
-    from handlers.import_url import import_url_start
-    return CommandHandler("url", wrap_conversation_entry_point(import_url_start))
+    from handlers.import_url import url_command
+    return CommandHandler("url", wrap_conversation_entry_point(url_command))
 
 
 def get_refresh_handler():
@@ -30,8 +30,8 @@ def get_refresh_handler():
 
 def get_tokens_handler():
     """获取API令牌管理命令处理器"""
-    from handlers.token_management import show_tokens_list
-    return CommandHandler("tokens", wrap_conversation_entry_point(show_tokens_list))
+    from handlers.token_management import tokens_command
+    return CommandHandler("tokens", wrap_conversation_entry_point(tokens_command))
 
 
 def get_tasks_handler():
@@ -41,13 +41,9 @@ def get_tasks_handler():
 
 
 def get_users_handler():
-    """获取用户管理处理器
-    
-    Returns:
-        ConversationHandler: 用户管理对话处理器
-    """
-    from handlers.user_management import create_user_management_handler
-    return create_user_management_handler()
+    """获取用户管理命令处理器"""
+    from handlers.user_management import users_command
+    return CommandHandler("users", wrap_conversation_entry_point(users_command))
 
 
 def get_identify_handler():
@@ -64,8 +60,8 @@ def get_blacklist_handler():
 
 def get_start_handler():
     """获取start命令处理器"""
-    from handlers.general import start
-    return CommandHandler("start", wrap_with_session_management(start))
+    from handlers.general import start_command
+    return CommandHandler("start", wrap_with_session_management(start_command))
 
 
 def get_help_handler():
@@ -76,8 +72,8 @@ def get_help_handler():
 
 def get_cancel_handler():
     """获取cancel命令处理器"""
-    from handlers.general import cancel
-    return CommandHandler("cancel", wrap_with_session_management(cancel))
+    from handlers.general import cancel_command
+    return CommandHandler("cancel", wrap_with_session_management(cancel_command))
 
 
 def get_global_fallbacks():
@@ -86,13 +82,13 @@ def get_global_fallbacks():
         get_cancel_handler(),
         get_search_handler(),
         get_auto_handler(),
-        # get_url_handler(),
-        # get_refresh_handler(),
-        # get_tokens_handler(),
-        # get_tasks_handler(),
-        # get_users_handler(),
-        # get_identify_handler(),
-        # get_blacklist_handler(),
+        get_url_handler(),
+        get_refresh_handler(),
+        get_tokens_handler(),
+        get_tasks_handler(),
+        get_users_handler(),
+        get_identify_handler(),
+        get_blacklist_handler(),
         get_start_handler(),
         get_help_handler(),
     ]

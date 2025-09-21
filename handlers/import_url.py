@@ -7,11 +7,10 @@ from utils.api import call_danmaku_api
 from utils.permission import check_admin_permission
 from utils.title_extractor import extract_show_title_from_h1
 from utils.rate_limit import should_block_by_rate_limit
+from utils.conversation_states import URL_INPUT, KEYWORD_INPUT, ANIME_SELECT, SOURCE_SELECT, EPISODE_INPUT
+from utils.handlers_utils import wrap_conversation_entry_point
 
 logger = logging.getLogger(__name__)
-
-# 对话状态
-URL_INPUT, KEYWORD_INPUT, ANIME_SELECT, SOURCE_SELECT, EPISODE_INPUT = range(5)
 
 async def check_url_accessibility(url: str) -> tuple[bool, str, dict]:
     """检查URL是否可访问并解析详细信息
@@ -397,7 +396,7 @@ async def auto_import_movie(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     return ConversationHandler.END
 
 @check_admin_permission
-async def import_url_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def url_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """开始URL导入流程"""
     # 检查流控状态
     should_block, seconds_until_reset = should_block_by_rate_limit()
@@ -856,14 +855,14 @@ async def cancel_import_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def restart_import_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """在对话中重新开始URL导入流程"""
     # 重新开始URL导入流程
-    return await import_url_start(update, context)
+    return await url_command(update, context)
 
 # 导出处理器创建函数
 def create_import_url_handler():
     """创建URL导入对话处理器"""
     return ConversationHandler(
         entry_points=[
-            CommandHandler('url', import_url_start),
+            CommandHandler('url', wrap_conversation_entry_point(url_command)),
         ],
         states={
             URL_INPUT: [
