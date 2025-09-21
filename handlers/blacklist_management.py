@@ -111,7 +111,8 @@ def create_blacklist_handler():
                 MessageHandler(
                     filters.TEXT & ~filters.COMMAND,
                     _wrap_with_session_management(blacklist_name_input)
-                )
+                ),
+                CommandHandler("blacklist", _wrap_conversation_entry_point(blacklist_command))
             ],
         },
         fallbacks=[
