@@ -240,9 +240,7 @@ def is_tt_id(text: str) -> bool:
     # 检查tt开头的格式
     if re.match(r'^tt\d+$', text):
         return True
-    # 检查纯数字格式（至少1位数字）
-    if re.match(r'^\d+$', text):
-        return True
+
     return False
 
 def determine_input_type(text: str) -> Dict[str, Any]:
