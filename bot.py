@@ -421,7 +421,12 @@ async def init_bot() -> Application:
     # 步骤5: 设置 Bot 命令菜单
     await _setup_bot_commands(application)
 
-    # 步骤6: 初始化识别词配置文件
+    # 步骤6: 设置bot_task_polling_manager的bot实例
+    from utils.task_polling import bot_task_polling_manager
+    bot_task_polling_manager.bot = application.bot
+    logger.info("🔌 Bot task polling manager bot instance set")
+    
+    # 步骤7: 初始化识别词配置文件
     try:
         from utils.identify_config import initialize_identify_config
         if initialize_identify_config():

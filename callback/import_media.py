@@ -53,11 +53,38 @@ async def handle_import_callback(update: Update, context: ContextTypes.DEFAULT_T
     # 5. 处理导入结果
     if api_result["success"]:
         data = api_result["data"]
+        task_id = data.get('taskId')
+        
         # 发送结果通知
         await query.message.reply_text(f"""
 🎉 导入请求已提交成功！
-• 任务ID：{data.get('taskId', '无')}
+• 任务ID：{task_id or '无'}
         """.strip())
+        
+        # 如果有taskId，启动轮询并发送回调通知
+        if task_id:
+            from utils.task_polling import bot_task_polling_manager
+            
+            # 从上下文获取搜索结果
+            search_results = context.user_data.get("search_results", [])
+            selected_result = search_results[result_index] if result_index < len(search_results) else {}
+            
+            # 构建媒体信息
+            media_info = {
+                'Type': selected_result.get('type', 'tv_series'),
+                'Title': selected_result.get('title', ''),
+                'Season': selected_result.get('season'),
+            }
+            
+            # 发送回调通知并启动轮询
+            await bot_task_polling_manager.send_callback_notification(
+                operation_type="import",
+                media_info=media_info,
+                result="success",
+                task_ids=[task_id],
+                user_id=str(query.from_user.id),
+                import_method="direct"  # 搜索后导入为direct方式
+            )
     else:
         # 发送失败原因
         await query.message.reply_text(f"""
@@ -431,12 +458,19 @@ async def handle_get_episode_callback(update: Update, context: ContextTypes.DEFA
             short_id = hashlib.md5(raw_data.encode()).hexdigest()[:8]
             logger.info(f"🔑 生成短ID: {short_id}，原始数据: {raw_data}")
             
+            # 从搜索结果中获取剧集基本信息
+            search_results = context.user_data.get("search_results", [])
+            selected_result = search_results[result_index] if result_index < len(search_results) else {}
+            
             # 缓存原始数据到短ID映射
             episode_data_map[short_id] = {
                 "result_index": result_index,
                 "search_id": search_id,
                 "total_episodes": len(full_episodes),
-                "cached_episodes": full_episodes
+                "cached_episodes": full_episodes,
+                "type": selected_result.get('type', 'tv_series'),
+                "title": selected_result.get('title', ''),
+                "season": selected_result.get('season')
             }
             logger.info(f"💾 缓存分集数据到短ID映射，总集数: {len(full_episodes)}")
             
@@ -778,11 +812,12 @@ async def handle_episode_range_input(update: Update, context: ContextTypes.DEFAU
 
         # 显示选中结果
         sorted_indices = sorted(selected_indices)
-        await update.message.reply_text(
-            f"✅ 共选中 {len(sorted_indices)} 集：\n"
-            f"选中集数：{', '.join(map(str, sorted_indices))}\n"
-            f"💡 即将开始导入"
-        )
+        # await update.message.reply_text(
+        #     f"✅ 共选中 {len(sorted_indices)} 集：\n"
+        #     f"选中集数：{', '.join(map(str, sorted_indices))}\n"
+        #     f"💡 即将开始导入"
+        # )
+
 
     # 准备导入
     sorted_indices = sorted(selected_indices)
@@ -818,11 +853,35 @@ async def handle_episode_range_input(update: Update, context: ContextTypes.DEFAU
         # 处理导入结果
         if api_result.get("success", False):
             data = api_result.get("data", {})
+            task_id = data.get('taskId')
+            
             await update.message.reply_text(
-                f"🎉 批量导入请求已提交成功！\n"
-                f"• 任务ID：{data.get('taskId', '无')}\n"
-                f"• 导入集数：{len(sorted_indices)} 集\n"
+                f"🎉 导入请求已提交成功！\n"
+                f"任务ID：{task_id or '无'}\n"
+                f"共选中 {len(sorted_indices)} 集\n"
+                f"选中集数：{', '.join(map(str, sorted_indices))}"
             )
+
+            # 如果有taskId，启动轮询并发送回调通知
+            if task_id:
+                from utils.task_polling import bot_task_polling_manager
+                
+                # 构建媒体信息（从current_data获取，避免重复查询search_results）
+                media_info = {
+                    'Type': current_data.get('type', 'tv_series'),
+                    'Title': current_data.get('title', ''),
+                    'Season': current_data.get('season'),
+                }
+                
+                # 发送回调通知并启动轮询
+                await bot_task_polling_manager.send_callback_notification(
+                    operation_type="import",
+                    media_info=media_info,
+                    result="success",
+                    task_ids=[task_id],
+                    user_id=str(update.effective_user.id),
+                    import_method="direct"  # 分集导入为direct方式
+                )
         else:
             error_msg = api_result.get("error", "未知错误")
             await update.message.reply_text(
