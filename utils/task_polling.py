@@ -442,7 +442,7 @@ class TaskPollingManager:
             
             # 为剧集构建包含季集信息的操作描述
             operation_text = base_operation_text
-            if media_info.get('Type') == 'Series':
+            if media_info.get('Type', '').lower() in {'series', 'tv_series'}:
                 season = media_info.get('Season')
                 episodes = media_info.get('Episodes', [])
                 
@@ -468,7 +468,7 @@ class TaskPollingManager:
             ]
             
             # 添加剧集特有信息
-            if media_info.get('Type') == 'Series':
+            if media_info.get('Type', '').lower() in {'series', 'tv_series'}:
                 if media_info.get('Season'):
                     message_lines.insert(-1, f"• 季度: S{media_info.get('Season')}")
                 
@@ -641,7 +641,7 @@ class TaskPollingManager:
             
             # 为剧集构建包含季集信息的操作描述
             operation_text = base_operation_text
-            if media_info.get('Type') == 'Series':
+            if media_info.get('Type', '').lower() in {'series', 'tv_series'}:
                 season = media_info.get('Season')
                 episodes = media_info.get('Episodes', [])
                 
@@ -667,7 +667,7 @@ class TaskPollingManager:
             ]
             
             # 添加剧集特有信息
-            if media_info.get('Type') == 'Series':
+            if media_info.get('Type', '').lower() in {'series', 'tv_series'}:
                 if media_info.get('Season'):
                     message_lines.insert(-1, f"• 季度: S{media_info.get('Season')}")
                 
