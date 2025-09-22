@@ -1857,10 +1857,31 @@ async def call_import_auto_api(update: Update, context: ContextTypes.DEFAULT_TYP
     
     # 处理API响应
     if api_result["success"]:
-        success_message = f"✅ 导入成功！"
-        
-        # 直接显示成功消息，不提供继续导入按钮
-        await send_message(success_message)
+        data = api_result.get("data", {})
+        task_id = data.get("taskId", [])
+        # 如果有taskIds，启动轮询并发送回调通知
+        if task_id:
+            from utils.task_polling import bot_task_polling_manager
+            
+            # 构建媒体信息
+            media_info = {
+                'Type': params.get('mediaType', 'Unknown'),
+                'Title': params.get('searchTerm', ''),
+                'Season': params.get('season'),
+            }
+            
+            # 发送回调通知并启动轮询
+            await bot_task_polling_manager.send_callback_notification(
+                operation_type="import",
+                media_info=media_info,
+                result="success",
+                task_ids=[task_id],
+                user_id=str(update.effective_user.id),
+                import_method="auto"  # /auto命令为auto方式，需要查询execution
+            )
+        else:
+            logger.warning("⚠️ API返回成功但没有taskIds，无法启动轮询")
+            
     else:
         await send_message(f"❌ 导入失败：{api_result['error']}")
 
