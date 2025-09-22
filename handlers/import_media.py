@@ -17,7 +17,7 @@ from utils.handlers_utils import wrap_conversation_entry_point, wrap_with_sessio
 from utils.handlers_fallbacks import get_global_fallbacks
 from callback.import_media import handle_get_episode_callback, handle_episode_range_input, cancel_episode_input, handle_search_type_callback, handle_media_type_callback, handle_import_auto_callback
 from handlers.general import cancel_command
-from utils.conversation_states import SEARCH_MEDIA, SEARCH_RESULTS, INPUT_EPISODE_RANGE, IMPORT_AUTO_SEARCH_TYPE, IMPORT_AUTO_KEYWORD_INPUT, IMPORT_AUTO_ID_INPUT, IMPORT_AUTO_SEASON_SELECTION, CALLBACK_DATA_MAX_LEN, EPISODES_PER_PAGE
+from utils.conversation_states import SEARCH_MEDIA, SEARCH_RESULTS, INPUT_EPISODE_RANGE, IMPORT_AUTO_SEARCH_TYPE, IMPORT_AUTO_KEYWORD_INPUT, IMPORT_AUTO_ID_INPUT, IMPORT_AUTO_SEASON_SELECTION, IMPORT_AUTO_MEDIA_TYPE_SELECTION, CALLBACK_DATA_MAX_LEN, EPISODES_PER_PAGE
 
 # 初始化日志
 logger = logging.getLogger(__name__)
@@ -130,8 +130,8 @@ async def auto_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
     
-    # 返回状态1，等待搜索类型选择
-    return 1
+    # 返回状态IMPORT_AUTO_SEARCH_TYPE，等待搜索类型选择
+    return IMPORT_AUTO_SEARCH_TYPE
 
 
 async def process_media_input_unified(update: Update, context: ContextTypes.DEFAULT_TYPE, input_info: dict, input_text: str):
@@ -1075,7 +1075,7 @@ async def process_keyword_search(update: Update, context: ContextTypes.DEFAULT_T
             parse_mode="Markdown"
         )
         
-        return 2  # 等待媒体类型选择
+        return IMPORT_AUTO_MEDIA_TYPE_SELECTION  # 等待媒体类型选择
 
 async def handle_media_import_flow(update: Update, context: ContextTypes.DEFAULT_TYPE, import_params: dict):
     """统一处理媒体导入流程"""
@@ -1392,7 +1392,7 @@ async def import_auto_keyword_input(update: Update, context: ContextTypes.DEFAUL
             reply_markup=reply_markup,
             parse_mode="Markdown"
         )
-        return 2  # 等待媒体类型选择
+        return IMPORT_AUTO_MEDIA_TYPE_SELECTION  # 等待媒体类型选择
 
 
 def validate_platform_match(user_input: str, selected_platform: str) -> tuple[bool, str]:
@@ -1866,7 +1866,7 @@ async def call_import_auto_api(update: Update, context: ContextTypes.DEFAULT_TYP
             # 构建媒体信息
             media_info = {
                 'Type': params.get('mediaType', 'Unknown'),
-                'Title': params.get('searchTerm', ''),
+                'Title': params.get('originalKeyword') if params.get('originalKeyword') is not None else params.get('searchTerm', ''),
                 'Season': params.get('season'),
             }
             
