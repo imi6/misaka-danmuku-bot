@@ -53,6 +53,7 @@ services:
       # Webhook配置（可选，用于接收媒体服务器通知）
       - WEBHOOK_PORT=7769
       - WEBHOOK_API_KEY=自定义的Webhook密钥
+      - WEBHOOK_CALLBACK_ENABLED=true
 
       # Telegram连接配置（可选，网络不稳定时调整）
       - TELEGRAM_CONNECT_TIMEOUT=30
@@ -64,7 +65,6 @@ services:
       - API_TIMEOUT=60
       - LOG_LEVEL=INFO
       - ENVIRONMENT=production
-      - DEBUG=false
 ```
 
 2. 启动服务：
@@ -116,6 +116,8 @@ app/
 - `BGM_ACCESS_TOKEN`: Bangumi API 访问令牌（用于 BGM 链接解析和媒体信息获取，从 https://bgm.tv/dev/app 创建应用获取）
 - `WEBHOOK_PORT`: Webhook 监听端口（默认 7769）
 - `WEBHOOK_API_KEY`: Webhook API 密钥（用于验证请求来源）-- 使用方式同御坂通知，端口改成WEBHOOK_PORT自定义的即可
+- `WEBHOOK_CALLBACK_CHAT_ID`: Webhook消息通知用户id，默认第一个管理员账号
+- `WEBHOOK_CALLBACK_ENABLED`: Webhook消息是否通知（默认true）
 - `TELEGRAM_CONNECT_TIMEOUT`: Telegram 连接超时时间（秒，默认 30）
 - `TELEGRAM_READ_TIMEOUT`: Telegram 读取超时时间（秒，默认 30）
 - `TELEGRAM_POOL_TIMEOUT`: Telegram 连接池超时时间（秒，默认 60）
@@ -157,6 +159,8 @@ python bot.py
 - ✅ 刷新数据源 (`/refresh`)
 - ✅ Token 管理 (`/tokens`)
 - ✅ 用户权限管理 (`/users`)
+- ✅ Webhook黑名单管理 (`/blacklist`)
+- ✅ 自定义识别词管理 (`/identify`)
 - ✅ 帮助和取消操作 (`/help`, `/cancel`)
 
 ### 普通用户权限
@@ -170,6 +174,8 @@ python bot.py
 - ❌ 刷新数据源 (`/refresh`) - 需要管理员权限
 - ❌ Token 管理 (`/tokens`) - 需要管理员权限
 - ❌ 用户权限管理 (`/users`) - 需要管理员权限
+- ❌ Webhook黑名单管理 (`/blacklist`) - 需要管理员权限
+- ❌ 自定义识别词管理 (`/identify`) - 需要管理员权限
 
 ### 用户管理功能
 
@@ -191,6 +197,7 @@ python bot.py
 - 💾 配置持久化（用户权限、API 配置自动保存）
 - 🎯 媒体搜索和导入
 - 🔄 自动导入功能
+- 📢 支持emby Webhook自动入库/刷新
 - 🧠 TMDB 智能搜索辅助（自动识别电影/电视剧类型）
 - 📺 TVDB 链接解析支持（自动识别 TVDB 链接并获取媒体信息）
 - 🎭 豆瓣链接解析支持（自动识别豆瓣链接并获取媒体信息）
