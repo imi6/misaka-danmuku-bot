@@ -88,6 +88,15 @@ app/
     └── app.log        # 应用日志
 ```
 
+### Webhook 自动入库/更新
+
+- WEBHOOK_PORT=7769
+- WEBHOOK_API_KEY=自定义的Webhook密钥
+- WEBHOOK_CALLBACK_ENABLED=true
+
+emby添加播放通知（http://ip:WEBHOOK_PORT/api/webhook/emby?api_key=WEBHOOK_API_KEY）
+
+
 **重要说明：**
 
 - 用户权限变更会自动保存到 `user.json`
