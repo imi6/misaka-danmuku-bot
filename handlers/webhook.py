@@ -109,9 +109,84 @@ class WebhookHandler:
             # 执行智能影视库管理流程
             await self._process_smart_library_management(media_info)
             
-            # 如果配置了Telegram机器人，可以发送通知给管理员
-            if self.bot and self.config.telegram.admin_user_ids:
-                await self._send_play_notification(media_info)
+            return {
+                "success": True,
+                "message": "播放开始事件已处理",
+                "processed": True,
+                "media_info": media_info
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ 处理Emby webhook时发生错误: {e}", exc_info=True)
+            return {
+                "success": False,
+                "error": f"处理webhook时发生错误: {str(e)}",
+                "code": 500
+            }
+    
+    async def handle_jellyfin_webhook(self, data: Dict[str, Any], api_key: str) -> Dict[str, Any]:
+        """处理Jellyfin webhook通知
+        
+        Args:
+            data: Jellyfin发送的webhook数据
+            api_key: 请求中的API密钥
+            
+        Returns:
+            Dict[str, Any]: 响应数据
+        """
+        try:
+            # 验证API密钥
+            if not self.validate_api_key(api_key):
+                return {
+                    "success": False,
+                    "error": "API密钥验证失败",
+                    "code": 401
+                }
+            
+            # 解析Jellyfin通知数据 - 使用Jellyfin标准字段
+            event_type = data.get('NotificationType', '')
+            logger.info(f"📡 收到Jellyfin通知，事件类型: {event_type}")
+            
+            # 记录完整的Jellyfin消息体到日志（DEBUG级别）
+            logger.debug(f"📋 完整Jellyfin消息体:\n{json.dumps(data, indent=2, ensure_ascii=False)}")
+            
+            # 记录关键信息到INFO级别日志 - 使用Jellyfin字段结构
+            # Jellyfin webhook直接在根级别提供字段，不使用嵌套结构
+            logger.info(f"📺 媒体信息: {data.get('Name', '未知')} (类型: {data.get('ItemType', '未知')})")
+            logger.info(f"👤 用户信息: {data.get('NotificationUsername', '未知')} | 设备: {data.get('DeviceName', '未知')} ({data.get('ClientName', '未知')})")
+            
+            # 记录Provider ID信息
+            provider_fields = {k: v for k, v in data.items() if k.startswith('Provider_')}
+            logger.info(f"🔗 提供商ID: {provider_fields}")
+            
+            # 只处理播放开始事件
+            if event_type != 'PlaybackStart':
+                logger.info(f"ℹ️ 忽略非播放开始事件: {event_type}")
+                return {
+                    "success": True,
+                    "message": f"事件 {event_type} 已忽略",
+                    "processed": False
+                }
+            
+            # 提取媒体信息
+            media_info = self._extract_jellyfin_media_info(data)
+            if not media_info:
+                logger.warning("⚠️ 无法提取媒体信息")
+                return {
+                    "success": False,
+                    "error": "无法提取媒体信息",
+                    "code": 400
+                }
+            
+            # 记录播放事件
+            tmdb_info = f" [TMDB: {media_info['tmdb_id']}]" if media_info.get('tmdb_id') else ""
+            logger.info(
+                f"🎬 Emby播放开始: {media_info['title']} "
+                f"(用户: {media_info.get('user', '未知')}){tmdb_info}"
+            )
+            
+            # 执行智能影视库管理流程
+            await self._process_smart_library_management(media_info)
             
             return {
                 "success": True,
@@ -127,6 +202,121 @@ class WebhookHandler:
                 "error": f"处理webhook时发生错误: {str(e)}",
                 "code": 500
             }
+    
+    def _extract_jellyfin_media_info(self, data: Dict[str, Any]) -> Optional[Dict[str, str]]:
+        """从Jellyfin webhook数据中提取媒体信息
+        
+        Args:
+            data: Jellyfin webhook数据
+            
+        Returns:
+            Optional[Dict[str, str]]: 提取的媒体信息，如果提取失败则返回None
+        """
+        try:
+            # 根据Jellyfin webhook文档，直接从根级别获取字段
+            # 参考: https://github.com/jellyfin/jellyfin-plugin-webhook
+            
+            # 提取基本信息 - 使用Jellyfin标准字段名
+            title = data.get('Name', '未知标题')
+            media_type = data.get('ItemType', '未知类型')  # Jellyfin使用ItemType而非Type
+            year = data.get('Year', '')
+            
+            # 对于剧集，提取季和集信息 - 使用Jellyfin标准字段
+            season_number = data.get('SeasonNumber')  # Jellyfin直接提供SeasonNumber
+            episode_number = data.get('EpisodeNumber')  # Jellyfin直接提供EpisodeNumber
+            series_name = data.get('SeriesName')  # Jellyfin直接提供SeriesName
+            
+            # 优化年份提取：优先使用PremiereDate
+            if not year and data.get('PremiereDate'):
+                try:
+                    premiere_date = datetime.fromisoformat(data['PremiereDate'].replace('Z', '+00:00'))
+                    year = premiere_date.year
+                    logger.debug(f"📅 从PremiereDate提取年份: {year}")
+                except Exception as e:
+                    logger.debug(f"解析PremiereDate失败: {e}")
+            
+            # 对于剧集类型，确保数字类型转换
+            if season_number is not None:
+                try:
+                    season_number = int(season_number)
+                except (ValueError, TypeError):
+                    season_number = None
+                    
+            if episode_number is not None:
+                try:
+                    episode_number = int(episode_number)
+                except (ValueError, TypeError):
+                    episode_number = None
+            
+            # 清理剧集名称
+            if series_name:
+                import re
+                series_name = series_name.strip()
+                # 移除常见的无用后缀
+                series_name = re.sub(r'\s*\(\d{4}\)\s*$', '', series_name)  # 移除年份括号
+                series_name = re.sub(r'\s*-\s*Season\s+\d+\s*$', '', series_name, flags=re.IGNORECASE)  # 移除季度后缀
+            
+            # 应用名称转换映射（如果是剧集且有必要信息）
+            identify_matched = False  # 标记是否匹配了识别词
+            if media_type == 'Episode' and series_name and season_number:
+                try:
+                    converted_result = convert_emby_series_name(series_name, season_number)
+                    if converted_result:
+                        logger.info(f"🔄 名称转换成功: '{series_name}' S{season_number:02d} -> '{converted_result['series_name']}' S{converted_result['season_number']:02d}")
+                        series_name = converted_result['series_name']
+                        season_number = converted_result['season_number']
+                        identify_matched = True  # 标记匹配了识别词
+                    else:
+                        logger.debug(f"📝 未找到名称转换规则: '{series_name}' S{season_number:02d}")
+                except Exception as e:
+                    logger.warning(f"⚠️ 名称转换时发生错误: {e}，使用原始名称")
+            
+            # 提取Provider ID信息 - 使用Jellyfin标准字段格式
+            # Jellyfin webhook提供Provider_{providerId_lowercase}格式的字段
+            tmdb_id = data.get('Provider_tmdb') or data.get('Provider_TheMovieDb')
+            imdb_id = data.get('Provider_imdb')
+            tvdb_id = data.get('Provider_tvdb') or data.get('Provider_TheTVDB')
+            douban_id = data.get('Provider_douban') or data.get('Provider_DoubanMovie')
+            bangumi_id = data.get('Provider_bangumi') or data.get('Provider_BGM')
+            
+            # 调试日志：显示提供商ID信息
+            provider_fields = {k: v for k, v in data.items() if k.startswith('Provider_')}
+            logger.debug(f"🔍 Jellyfin Provider字段: {provider_fields}")
+            logger.debug(f"🎯 提取的Provider ID: TMDB={tmdb_id}, IMDB={imdb_id}, TVDB={tvdb_id}, Douban={douban_id}, Bangumi={bangumi_id}")
+            logger.debug(f"🎯 最终提取信息: 剧集='{series_name}', 季度={season_number}, 集数={episode_number}, 年份={year}, TMDB_ID={tmdb_id}")
+            
+            # 构建完整标题
+            if media_type == 'Episode' and series_name:
+                if season_number and episode_number:
+                    full_title = f"{series_name} S{season_number:02d}E{episode_number:02d} - {title}"
+                else:
+                    full_title = f"{series_name} - {title}"
+            else:
+                full_title = f"{title} ({year})" if year else title
+            
+            return {
+                "title": full_title,
+                "original_title": title,
+                "type": media_type,
+                "year": str(year) if year else '',
+                "series_name": series_name or '',
+                "season": str(season_number) if season_number else '',
+                "episode": str(episode_number) if episode_number else '',
+                "tmdb_id": tmdb_id or '',
+                "imdb_id": imdb_id or '',
+                "tvdb_id": tvdb_id or '',
+                "douban_id": douban_id or '',
+                "bangumi_id": bangumi_id or '',
+                "identify_matched": identify_matched,  # 添加识别词匹配标识
+                "user": data.get('NotificationUsername', '未知用户'),  # Jellyfin使用NotificationUsername
+                "client": data.get('ClientName', '未知客户端'),  # Jellyfin使用ClientName
+                "device": data.get('DeviceName', '未知设备'),  # Jellyfin使用DeviceName
+                "timestamp": datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ 提取媒体信息时发生错误: {e}")
+            return None
     
     def _extract_media_info(self, data: Dict[str, Any]) -> Optional[Dict[str, str]]:
         """从Emby webhook数据中提取媒体信息
@@ -276,38 +466,6 @@ class WebhookHandler:
             logger.error(f"❌ 提取媒体信息时发生错误: {e}")
             return None
     
-    async def _send_play_notification(self, media_info: Dict[str, str]):
-        """向管理员发送播放通知
-        
-        Args:
-            media_info: 媒体信息
-        """
-        try:
-            if not self.bot:
-                return
-                
-            message = (
-                f"🎬 **Emby播放通知**\n\n"
-                f"📺 **媒体**: {media_info['title']}\n"
-                f"👤 **用户**: {media_info['user']}\n"
-                f"📱 **设备**: {media_info['device']} ({media_info['client']})\n"
-                f"⏰ **时间**: {media_info['timestamp']}"
-            )
-            
-            # 发送给所有管理员
-            for admin_id in self.config.telegram.admin_user_ids:
-                try:
-                    await self.bot.send_message(
-                        chat_id=admin_id,
-                        text=message,
-                        parse_mode='Markdown'
-                    )
-                except Exception as e:
-                    logger.error(f"❌ 向管理员 {admin_id} 发送通知失败: {e}")
-                    
-        except Exception as e:
-            logger.error(f"❌ 发送播放通知时发生错误: {e}")
-    
     async def _process_smart_library_management(self, media_info: Dict[str, Any]):
         """执行智能影视库管理流程
         
@@ -352,13 +510,12 @@ class WebhookHandler:
                 missing_info.append('标题')
             
             # 对于电视剧，如果缺少Provider ID但有剧集名称，尝试通过名称搜索TMDB ID
+            # 仅记录日志
             if not provider_id and media_type == 'Episode':
                 series_name = media_info.get('series_name')
                 year = media_info.get('year')
                 if series_name:
                     logger.info(f"🔍 电视剧缺少Provider ID，尝试通过剧集名称搜索TMDB ID: {series_name} ({year})")
-                    # 这里可以调用TMDB搜索API来获取TMDB ID
-                    # 暂时先记录日志，后续可以扩展搜索功能
                     logger.debug(f"📺 剧集信息: 名称='{series_name}', 年份='{year}', 季数='{media_info.get('season')}', 集数='{media_info.get('episode')}'")
             
             # 如果仍然缺少关键信息，跳过智能管理
