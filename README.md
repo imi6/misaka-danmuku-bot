@@ -88,6 +88,14 @@ app/
     └── app.log        # 应用日志
 ```
 
+**重要说明：**
+
+- 用户权限变更会自动保存到 `user.json`
+- 通过 Docker 卷映射可实现数据持久化
+- 重启容器后配置和用户数据不会丢失
+
+
+
 ### Webhook 自动入库/更新
 
 - `WEBHOOK_PORT=7769`
@@ -96,13 +104,13 @@ app/
 
 emby添加播放通知（http://ip:WEBHOOK_PORT/api/webhook/emby?api_key=WEBHOOK_API_KEY）
 
-
-
 **重要说明：**
 
-- 用户权限变更会自动保存到 `user.json`
-- 通过 Docker 卷映射可实现数据持久化
-- 重启容器后配置和用户数据不会丢失
+添加一下参数，有助识别准确度
+
+- `TMDB_API_KEY`: TMDB API 密钥（用于智能搜索辅助，从 https://www.themoviedb.org/settings/api 获取）
+- `TVDB_API_KEY`: TVDB API 密钥（用于 TVDB 链接解析和媒体信息获取，从 https://thetvdb.com/api-information 获取）
+- `BGM_ACCESS_TOKEN`: Bangumi API 访问令牌（用于 BGM 链接解析和媒体信息获取，从 https://bgm.tv/dev/app 创建应用获取）
 
 ### 环境变量说明
 
