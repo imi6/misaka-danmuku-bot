@@ -891,6 +891,7 @@ class WebhookHandler:
             # 优先使用provider信息进行导入
             if provider_id and provider_type:
                 logger.info(f"📥 使用优先级provider进行导入: {title} ({provider_type.upper()}: {provider_id})")
+                
                 if media_type == 'movie':
                     await self._import_movie_by_provider(provider_id, provider_type, title, identify_matched)
                     return
@@ -1250,25 +1251,54 @@ class WebhookHandler:
             provider_id: Provider ID (tmdb_id, tvdb_id, imdb_id, douban_id, 或 bangumi_id)
             provider_type: Provider 类型 ('tmdb', 'tvdb', 'imdb', 'douban', 'bangumi')
             movie_title: 电影标题（可选，用于通知显示）
+            identify_matched: 是否为识别词匹配
         """
         try:
             logger.info(f"📥 开始导入电影 ({provider_type.upper()}: {provider_id})")
             
-            # 调用导入API
+            # 标记是否使用关键字模式
+            use_keyword_mode = False
+            
+            # 如果是TMDB provider，尝试获取TMDB详情
+            if provider_type.lower() == 'tmdb':
+                try:
+                    tmdb_details = get_tmdb_media_details(provider_id, 'movie')
+                    if not tmdb_details:
+                        logger.warning(f"⚠️ TMDB详情获取失败: {provider_id}")
+                        use_keyword_mode = True
+                    else:
+                        logger.info(f"✅ TMDB详情获取成功: {tmdb_details.get('title', 'Unknown')}")
+                except Exception as e:
+                    logger.error(f"❌ TMDB详情获取异常: {provider_id} - {e}")
+                    use_keyword_mode = True
+            
+            # 构建导入参数
             if identify_matched and movie_title:
                 # 识别词匹配时使用关键词模式
                 import_params = {
                     "searchType": "keyword",
                     "searchTerm": movie_title,
-                    "originalKeyword": movie_title  # 添加原始关键词用于识别词匹配
+                    "originalKeyword": movie_title
                 }
-                logger.info(f"🎯 使用关键词模式导入电影: {movie_title}")
+                logger.info(f"🎯 使用关键词模式导入电影 (识别词匹配): {movie_title}")
+            elif use_keyword_mode and movie_title:
+                # TMDB详情获取失败时自动切换至关键字模式
+                import_params = {
+                    "searchType": "keyword",
+                    "searchTerm": movie_title,
+                    "originalKeyword": movie_title
+                }
+                logger.info(f"🔄 TMDB详情获取失败，自动切换至关键字模式: {movie_title}")
+            elif use_keyword_mode and not movie_title:
+                # TMDB详情获取失败且无电影标题，跳过导入
+                logger.warning(f"❌ TMDB详情获取失败且无movie_title，跳过导入: {provider_id}")
+                return
             else:
-                # 非识别词匹配时使用provider模式
+                # 默认使用provider模式
                 import_params = {
                     "searchType": provider_type,
                     "searchTerm": provider_id,
-                    "originalKeyword": movie_title if movie_title else f"{provider_type.upper()} ID: {provider_id}"  # 添加原始关键词用于识别词匹配
+                    "originalKeyword": movie_title if movie_title else f"{provider_type.upper()} ID: {provider_id}"
                 }
                 logger.info(f"🚀 使用Provider模式导入电影: {provider_type.upper()} {provider_id}")
             
@@ -1314,14 +1344,6 @@ class WebhookHandler:
                 
         except Exception as e:
             logger.error(f"❌ 导入电影时发生错误 ({provider_type.upper()}: {provider_id}): {e}", exc_info=True)
-    
-    async def _import_movie(self, tmdb_id: str):
-        """导入单个电影 (兼容性方法)
-        
-        Args:
-            tmdb_id: TMDB电影ID
-        """
-        await self._import_movie_by_provider(tmdb_id, 'tmdb')
     
     async def _refresh_movie(self, source_id: str, movie_title: str = None):
         """刷新电影数据
@@ -1451,6 +1473,8 @@ class WebhookHandler:
         
         # 获取详细信息进行验证（仅TMDB支持）
         max_episodes = 0
+        use_keyword_mode = False  # 标记是否需要使用关键词模式
+        
         try:
             if provider_type.lower() == 'tmdb':
                 tmdb_info = get_tmdb_media_details(provider_id, 'tv_series')
@@ -1472,11 +1496,14 @@ class WebhookHandler:
                     max_episodes = valid_season.get('episode_count', 0)
                     logger.info(f"📊 季度信息: S{season} 共{max_episodes}集")
                 else:
-                    logger.warning(f"⚠️ 无法获取TMDB详细信息: {provider_id}，继续尝试导入")
+                    logger.warning(f"⚠️ 无法获取TMDB详细信息: {provider_id}，自动切换至关键字模式")
+                    use_keyword_mode = True
             else:
                 logger.info(f"📺 准备导入剧集: {provider_type.upper()} {provider_id} S{season}")
         except Exception as e:
-            logger.warning(f"⚠️ 验证{provider_type.upper()}信息时出错: {e}，继续尝试导入")
+            logger.warning(f"⚠️ 验证{provider_type.upper()}信息时出错: {e}，自动切换至关键字模式")
+            if provider_type.lower() == 'tmdb':
+                use_keyword_mode = True
         
         success_count = 0
         failed_count = 0
@@ -1514,15 +1541,31 @@ class WebhookHandler:
                         "originalKeyword": series_name  # 添加原始关键词用于识别词匹配
                     }
                     logger.info(f"🎯 使用关键词模式导入: {series_name} S{season:02d}E{episode_num:02d}")
+                elif use_keyword_mode and series_name:
+                    # TMDB详情获取失败时自动切换至关键词模式
+                    import_params = {
+                        "searchType": "keyword",
+                        "searchTerm": series_name,
+                        "mediaType": "tv_series",
+                        "season": season,
+                        "episode": episode_num,
+                        "originalKeyword": series_name
+                    }
+                    logger.info(f"🔄 自动切换关键词模式导入: {series_name} S{season:02d}E{episode_num:02d}")
+                elif use_keyword_mode and not series_name:
+                    # TMDB详情获取失败且无series_name时跳过
+                    logger.warning(f"❌ 无法获取TMDB详情且无series_name，跳过导入: {provider_id} S{season:02d}E{episode_num:02d}")
+                    failed_count += 1
+                    continue
                 else:
-                    # 非识别词匹配时使用provider模式
+                    # 使用provider模式
                     import_params = {
                         "searchType": search_type,
                         "searchTerm": provider_id,
                         "mediaType": "tv_series",
                         "season": season,
                         "episode": episode_num,
-                        "originalKeyword": series_name if series_name else f"{provider_type.upper()} ID: {provider_id}"  # 添加原始关键词用于识别词匹配
+                        "originalKeyword": series_name if series_name else f"{provider_type.upper()} ID: {provider_id}"
                     }
                     logger.info(f"🚀 使用Provider模式导入: {provider_type.upper()} {provider_id} S{season:02d}E{episode_num:02d}")
                 
@@ -1602,17 +1645,6 @@ class WebhookHandler:
                     
         except Exception as e:
             logger.error(f"❌ 导入集数异常: {e}", exc_info=True)
-    
-    async def _import_episodes(self, tmdb_id: str, season: int, episodes: list, series_name: str = None):
-        """导入指定集数（兼容性方法）
-        
-        Args:
-            tmdb_id: TMDB ID
-            season: 季度
-            episodes: 集数列表
-            series_name: 剧集名称（可选）
-        """
-        await self._import_episodes_by_provider(tmdb_id, 'tmdb', season, episodes, series_name)
     
      
     def _get_priority_provider_info(self, media_info: Dict[str, Any]) -> tuple:
