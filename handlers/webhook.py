@@ -76,8 +76,6 @@ class WebhookHandler:
             item_info = data.get('Item', {})
             session_info = data.get('Session', {})
             user_info = data.get('User', {})
-            logger.info(f"📺 媒体信息: {item_info.get('Name', '未知')} (类型: {item_info.get('Type', '未知')})")
-            logger.info(f"👤 用户信息: {user_info.get('Name', '未知')} | 设备: {session_info.get('DeviceName', '未知')} ({session_info.get('Client', '未知')})")
             logger.info(f"🔗 提供商ID: {item_info.get('ProviderIds', {})}")
             
             # 只处理播放开始事件
@@ -258,13 +256,15 @@ class WebhookHandler:
             
             # 应用名称转换映射（如果是剧集且有必要信息）
             identify_matched = False  # 标记是否匹配了识别词
+            converted_series_name = None
+            converted_season_number = None
             if media_type == 'Episode' and series_name and season_number:
                 try:
                     converted_result = convert_emby_series_name(series_name, season_number)
                     if converted_result:
                         logger.info(f"🔄 名称转换成功: '{series_name}' S{season_number:02d} -> '{converted_result['series_name']}' S{converted_result['season_number']:02d}")
-                        series_name = converted_result['series_name']
-                        season_number = converted_result['season_number']
+                        converted_series_name = converted_result['series_name']
+                        converted_season_number = converted_result['season_number']
                         identify_matched = True  # 标记匹配了识别词
                     else:
                         logger.debug(f"📝 未找到名称转换规则: '{series_name}' S{season_number:02d}")
@@ -300,7 +300,9 @@ class WebhookHandler:
                 "type": media_type,
                 "year": str(year) if year else '',
                 "series_name": series_name or '',
+                "converted_series_name": converted_series_name or '', # 转换后的剧集名称
                 "season": str(season_number) if season_number else '',
+                "converted_season": str(converted_season_number) if converted_season_number else '', # 转换后的季度
                 "episode": str(episode_number) if episode_number else '',
                 "tmdb_id": tmdb_id or '',
                 "imdb_id": imdb_id or '',
@@ -308,9 +310,6 @@ class WebhookHandler:
                 "douban_id": douban_id or '',
                 "bangumi_id": bangumi_id or '',
                 "identify_matched": identify_matched,  # 添加识别词匹配标识
-                "user": data.get('NotificationUsername', '未知用户'),  # Jellyfin使用NotificationUsername
-                "client": data.get('ClientName', '未知客户端'),  # Jellyfin使用ClientName
-                "device": data.get('DeviceName', '未知设备'),  # Jellyfin使用DeviceName
                 "timestamp": datetime.now().isoformat()
             }
             
@@ -407,13 +406,15 @@ class WebhookHandler:
             
             # 应用名称转换映射（如果是剧集且有必要信息）
             identify_matched = False  # 标记是否匹配了识别词
+            converted_series_name = None
+            converted_season_number = None
             if media_type == 'Episode' and series_name and season_number:
                 try:
                     converted_result = convert_emby_series_name(series_name, season_number)
                     if converted_result:
                         logger.info(f"🔄 名称转换成功: '{series_name}' S{season_number:02d} -> '{converted_result['series_name']}' S{converted_result['season_number']:02d}")
-                        series_name = converted_result['series_name']
-                        season_number = converted_result['season_number']
+                        converted_series_name = converted_result['series_name']
+                        converted_season_number = converted_result['season_number']
                         identify_matched = True  # 标记匹配了识别词
                     else:
                         logger.debug(f"📝 未找到名称转换规则: '{series_name}' S{season_number:02d}")
@@ -448,7 +449,9 @@ class WebhookHandler:
                 "type": media_type,
                 "year": str(year) if year else '',
                 "series_name": series_name or '',
+                "converted_series_name": converted_series_name or '', # 转换后的剧集名称
                 "season": str(season_number) if season_number else '',
+                "converted_season": str(converted_season_number) if converted_season_number else '', # 转换后的季度
                 "episode": str(episode_number) if episode_number else '',
                 "tmdb_id": tmdb_id or '',
                 "imdb_id": imdb_id or '',
@@ -456,9 +459,6 @@ class WebhookHandler:
                 "douban_id": douban_id or '',
                 "bangumi_id": bangumi_id or '',
                 "identify_matched": identify_matched,  # 添加识别词匹配标识
-                "user": user.get('Name', '未知用户'),
-                "client": session.get('Client', '未知客户端'),
-                "device": session.get('DeviceName', '未知设备'),
                 "timestamp": datetime.now().isoformat()
             }
             
@@ -706,7 +706,7 @@ class WebhookHandler:
             
             logger.info(f"📊 Library匹配结果: 找到 {len(season_matches)} 个匹配项（基于season字段匹配）")
             if season_matches:
-                for i, match in enumerate(season_matches[:3]):  # 只显示前3个
+                for i, match in enumerate(season_matches[:20]):  # 只显示前20个
                     logger.info(f"  {i+1}. {match.get('title')} (season={match.get('season')}, ID: {match.get('animeId')})")
                         
             # 检查是否有完全匹配的季度
@@ -734,8 +734,9 @@ class WebhookHandler:
             
             # 如果识别词匹配但库中无对应资源，直接使用关键词导入
             if identify_matched and not season_matches:
-                logger.info(f"🎯 识别词匹配且库中无对应资源，直接使用关键词导入: {series_name}")
-                await self._import_episodes_by_provider(None, 'keyword', season, [episode, episode + 1] if episode else None, series_name, identify_matched)
+                # 导入时使用转换后结果
+                logger.info(f"🎯 识别词匹配且库中无对应资源，直接使用关键词导入: {converted_series_name}")
+                await self._import_episodes_by_provider(None, 'keyword', converted_season_number, [episode, episode + 1] if episode else None, converted_series_name, identify_matched)
                 return True
             
             if should_search_tmdb:
@@ -1721,15 +1722,19 @@ class WebhookHandler:
             
             # 收集需要导入的集数信息，以便批量处理
             episodes_to_import = []
-            
+
             for episode in episodes:
                 episode_info = episode_map.get(episode)
                 if not episode_info:
                     # 当集数不存在时，根据识别词匹配状态决定处理方式
                     if identify_matched:
-                        # 识别词匹配时，直接使用keyword/auto导入该集
-                        logger.info(f"🔍 未找到第{episode}集且识别词匹配，直接关键词导入第{episode}集: {series_name} S{season_num}E{episode:02d}")
-                        await self._import_episodes_by_provider(None, 'keyword', season_num, [episode], series_name, identify_matched)
+                        # 识别词匹配时，直接使用keyword/auto导入该集, 使用识别词导入
+                        converted_result = convert_emby_series_name(series_name, season_number)
+                        converted_series_name = converted_result['series_name']
+                        converted_season_number = converted_result['season_number']
+
+                        logger.info(f"🔍 未找到第{episode}集且识别词匹配，直接关键词导入第{episode}集: {converted_series_name} S{converted_season_number}E{episode:02d}")
+                        await self._import_episodes_by_provider(None, 'keyword', converted_season_number, [episode], converted_series_name, identify_matched)
                     else:
                         # 非识别词匹配时，使用原有TMDB搜索逻辑
                         current_tmdb_id = tmdb_id
@@ -1979,30 +1984,6 @@ class WebhookHandler:
                     await webhook_task_polling_manager.send_callback_notification('import', media_info, 'failed', f"所有集数导入失败", task_ids=task_ids_param)
         except Exception as e:
             logger.error(f"❌ 批量导入集数异常: {e}")
-    
-    def _get_clean_media_name(self, media_info: Dict[str, Any]) -> str:
-        """从emby通知信息中获取媒体名称
-        
-        优先使用从emby webhook提取的完整媒体信息
-        
-        Args:
-            media_info: 从emby webhook提取的媒体信息字典
-            
-        Returns:
-            str: 媒体名称
-        """
-        # 优先级顺序：title (完整标题) > SeriesName (剧集名) > series_name (剧集名) > original_title (原始标题) > Name (兼容旧格式)
-        name = (
-            media_info.get('title') or 
-            media_info.get('SeriesName') or 
-            media_info.get('series_name') or 
-            media_info.get('original_title') or 
-            media_info.get('Name', '未知')
-        )
-        
-        return name.strip()
-    
-
 
 
 # 全局webhook处理器实例
