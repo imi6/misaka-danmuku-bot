@@ -735,6 +735,8 @@ class WebhookHandler:
             # 如果识别词匹配但库中无对应资源，直接使用关键词导入
             if identify_matched and not season_matches:
                 # 导入时使用转换后结果
+                converted_series_name = media_info.get('converted_series_name', series_name)
+                converted_season_number = media_info.get('converted_season_number', season)
                 logger.info(f"🎯 识别词匹配且库中无对应资源，直接使用关键词导入: {converted_series_name}")
                 await self._import_episodes_by_provider(None, 'keyword', converted_season_number, [episode, episode + 1] if episode else None, converted_series_name, identify_matched)
                 return True
