@@ -450,8 +450,8 @@ class WebhookHandler:
                 "year": str(year) if year else '',
                 "series_name": series_name or '',
                 "converted_series_name": converted_series_name or '', # 转换后的剧集名称
-                "season": str(season_number) if season_number else '',
-                "converted_season": str(converted_season_number) if converted_season_number else '', # 转换后的季度
+                "season": season_number or None,
+                "converted_season": converted_season_number or None, # 转换后的季度
                 "episode": str(episode_number) if episode_number else '',
                 "tmdb_id": tmdb_id or '',
                 "imdb_id": imdb_id or '',
@@ -737,7 +737,7 @@ class WebhookHandler:
                 # 导入时使用转换后结果
                 converted_series_name = media_info.get('converted_series_name', series_name)
                 converted_season_number = media_info.get('converted_season', season)
-                logger.info(f"🎯 识别词匹配且库中无对应资源，直接使用关键词导入: {converted_series_name}")
+                logger.info(f"🎯 识别词匹配且库中无对应资源，直接使用关键词导入: {converted_series_name}{converted_season_number}")
                 await self._import_episodes_by_provider(None, 'keyword', converted_season_number, [episode, episode + 1] if episode else None, converted_series_name, identify_matched)
                 return True
             
