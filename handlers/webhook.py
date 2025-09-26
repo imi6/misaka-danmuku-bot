@@ -450,8 +450,8 @@ class WebhookHandler:
                 "year": str(year) if year else '',
                 "series_name": series_name or '',
                 "converted_series_name": converted_series_name or '', # 转换后的剧集名称
-                "season": season_number or None,
-                "converted_season": converted_season_number or None, # 转换后的季度
+                "season": str(season_number) if season_number else '',
+                "converted_season": str(converted_season_number) if converted_season_number else '', # 转换后的季度
                 "episode": str(episode_number) if episode_number else '',
                 "tmdb_id": tmdb_id or '',
                 "imdb_id": imdb_id or '',
@@ -737,7 +737,16 @@ class WebhookHandler:
                 # 导入时使用转换后结果
                 converted_series_name = media_info.get('converted_series_name', series_name)
                 converted_season_number = media_info.get('converted_season', season)
-                logger.info(f"🎯 识别词匹配且库中无对应资源，直接使用关键词导入: {converted_series_name}{converted_season_number}")
+                
+                # 确保converted_season_number是整数类型
+                if isinstance(converted_season_number, str):
+                    try:
+                        converted_season_number = int(converted_season_number)
+                    except (ValueError, TypeError):
+                        logger.warning(f"⚠️ 无法将converted_season_number转换为整数: {converted_season_number}，使用原始season值")
+                        converted_season_number = season if isinstance(season, int) else 1
+                
+                logger.info(f"🎯 识别词匹配且库中无对应资源，直接使用关键词导入: {converted_series_name}")
                 await self._import_episodes_by_provider(None, 'keyword', converted_season_number, [episode, episode + 1] if episode else None, converted_series_name, identify_matched)
                 return True
             
@@ -1734,6 +1743,14 @@ class WebhookHandler:
                         converted_result = convert_emby_series_name(series_name, season_number)
                         converted_series_name = converted_result['series_name']
                         converted_season_number = converted_result['season_number']
+                        
+                        # 确保converted_season_number是整数类型（防御性编程）
+                        if isinstance(converted_season_number, str):
+                            try:
+                                converted_season_number = int(converted_season_number)
+                            except (ValueError, TypeError):
+                                logger.warning(f"⚠️ 无法将converted_season_number转换为整数: {converted_season_number}，使用原始season_number值")
+                                converted_season_number = season_number if isinstance(season_number, int) else 1
 
                         logger.info(f"🔍 未找到第{episode}集且识别词匹配，直接关键词导入第{episode}集: {converted_series_name} S{converted_season_number}E{episode:02d}")
                         await self._import_episodes_by_provider(None, 'keyword', converted_season_number, [episode], converted_series_name, identify_matched)
