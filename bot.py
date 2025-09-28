@@ -229,7 +229,6 @@ async def _setup_bot_commands(application: Application):
         BotCommand("tokens", "管理API令牌"),
         BotCommand("tasks", "查看任务列表"),
         BotCommand("users", "管理用户权限"),
-        BotCommand("blacklist", "管理webhook黑名单"),
         BotCommand("help", "查看帮助信息"),
         BotCommand("cancel", "取消当前操作")
     ]
@@ -303,11 +302,6 @@ def _setup_handlers(application, handlers_module, callback_module):
     application.add_handler(tasks_handler)
     current_handlers["tasks_handler"] = tasks_handler
     
-    # 黑名单管理处理器
-    from handlers.blacklist_management import create_blacklist_handler
-    blacklist_handler = create_blacklist_handler()
-    application.add_handler(blacklist_handler)
-    current_handlers["blacklist_handler"] = blacklist_handler
     
     # 3. 注册通用命令处理器
     start_handler = CommandHandler("start", wrap_with_session_management(start_command))
@@ -418,15 +412,7 @@ async def init_bot() -> Application:
     bot_task_polling_manager.bot = application.bot
     logger.info("🔌 Bot task polling manager bot instance set")
     
-    # 步骤7: 初始化黑名单配置文件
-    try:
-        from utils.blacklist_config import initialize_blacklist_config
-        if initialize_blacklist_config():
-            logger.info("✅ 黑名单配置文件初始化成功")
-        else:
-            logger.warning("⚠️ 黑名单配置文件初始化失败")
-    except Exception as e:
-        logger.error(f"❌ 黑名单配置文件初始化异常: {e}")
+    # 黑名单配置文件初始化已删除
 
     # 步骤8: 设置webhook处理器的Bot实例
     try:

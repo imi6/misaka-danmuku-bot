@@ -9,9 +9,6 @@ from .import_media import (
 # 导入用户管理处理器
 from .user_management import create_user_management_handler
 
-# 导入黑名单管理处理器
-from .blacklist_management import create_blacklist_handler
-
 # 导入任务管理处理器
 from .tasks import create_tasks_handler
 
@@ -22,9 +19,7 @@ def get_user_handler():
     """获取用户管理处理器"""
     return create_user_management_handler()
 
-def get_blacklist_handler():
-    """获取黑名单管理处理器"""
-    return create_blacklist_handler()
+# blacklist handler removed
 
 def get_task_handler():
     """获取任务管理处理器"""
@@ -44,7 +39,6 @@ __all__ = [
     
     # 管理功能处理器
     'create_user_management_handler',
-    'create_blacklist_handler',
     'create_tasks_handler',
     
     # Webhook处理器
@@ -52,6 +46,5 @@ __all__ = [
     
     # 便捷获取函数
     'get_user_handler',
-    'get_blacklist_handler',
     'get_task_handler',
 ]

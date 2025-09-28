@@ -14,7 +14,7 @@ from utils.tmdb_api import get_tmdb_media_details, search_tv_series_by_name_year
 from utils.api import call_danmaku_api
 from utils.security import mask_sensitive_data
 from utils.emby_name_converter import convert_emby_series_name
-from utils.blacklist_config import load_blacklist
+from utils.webhook_filter import should_filter_webhook_title
 from utils.rate_limit import should_block_by_rate_limit
 
 logger = logging.getLogger(__name__)
@@ -478,15 +478,11 @@ class WebhookHandler:
             if should_block:
                 return
             
-            # 检查是否在黑名单中
+            # 检查是否应该过滤此内容
             title = media_info.get('original_title')
             series_name = media_info.get('series_name')
-            blacklist = load_blacklist()
-
-            # 检查电影标题或电视剧名称是否在黑名单中（不区分大小写，完全匹配）
-            if (title and title.lower() in blacklist) or (series_name and series_name.lower() in blacklist):
-                blocked_title = title if title.lower() in blacklist else series_name
-                logger.info(f"🚫 {blocked_title} 在黑名单中，终止处理流程")
+            
+            if should_filter_webhook_title(title, series_name):
                 return
             
             # 检查是否为重复播放事件
