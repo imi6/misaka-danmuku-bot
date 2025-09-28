@@ -258,6 +258,8 @@ class WebhookHandler:
             identify_matched = False  # 标记是否匹配了识别词
             converted_series_name = None
             converted_season_number = None
+            converted_title = None  # 电影转换后的标题
+            
             if media_type == 'Episode' and series_name and season_number:
                 try:
                     converted_result = convert_emby_series_name(series_name, season_number)
@@ -270,6 +272,18 @@ class WebhookHandler:
                         logger.debug(f"📝 未找到名称转换规则: '{series_name}' S{season_number:02d}")
                 except Exception as e:
                     logger.warning(f"⚠️ 名称转换时发生错误: {e}，使用原始名称")
+            elif media_type == 'Movie':
+                # 为电影类型添加识别词转换
+                try:
+                    converted_result = convert_emby_series_name(title, 1)
+                    if converted_result:
+                        logger.info(f"🎬 电影名称转换成功: '{title}' -> '{converted_result['series_name']}'")
+                        converted_title = converted_result['series_name']
+                        identify_matched = True  # 标记匹配了识别词
+                    else:
+                        logger.debug(f"📝 未找到电影名称转换规则: '{title}'")
+                except Exception as e:
+                    logger.warning(f"⚠️ 电影名称转换时发生错误: {e}，使用原始名称")
             
             # 提取Provider ID信息 - 使用Jellyfin标准字段格式
             # Jellyfin webhook提供Provider_{providerId_lowercase}格式的字段
@@ -300,16 +314,19 @@ class WebhookHandler:
                 "type": media_type,
                 "year": str(year) if year else '',
                 "series_name": series_name or '',
-                "converted_series_name": converted_series_name or '', # 转换后的剧集名称
                 "season": str(season_number) if season_number else '',
-                "converted_season": str(converted_season_number) if converted_season_number else '', # 转换后的季度
                 "episode": str(episode_number) if episode_number else '',
                 "tmdb_id": tmdb_id or '',
                 "imdb_id": imdb_id or '',
                 "tvdb_id": tvdb_id or '',
                 "douban_id": douban_id or '',
                 "bangumi_id": bangumi_id or '',
-                "identify_matched": identify_matched,  # 添加识别词匹配标识
+                "converted_info": {  # 新增converted_info字段
+                    "converted_title": converted_title,
+                    "converted_series_name": converted_series_name or '',
+                    "converted_season_number": str(converted_season_number) if converted_season_number else '',
+                    "identify_matched": identify_matched
+                },
                 "timestamp": datetime.now().isoformat()
             }
             
@@ -408,6 +425,8 @@ class WebhookHandler:
             identify_matched = False  # 标记是否匹配了识别词
             converted_series_name = None
             converted_season_number = None
+            converted_title = None  # 电影转换后的标题
+            
             if media_type == 'Episode' and series_name and season_number:
                 try:
                     converted_result = convert_emby_series_name(series_name, season_number)
@@ -420,6 +439,18 @@ class WebhookHandler:
                         logger.debug(f"📝 未找到名称转换规则: '{series_name}' S{season_number:02d}")
                 except Exception as e:
                     logger.warning(f"⚠️ 名称转换时发生错误: {e}，使用原始名称")
+            elif media_type == 'Movie':
+                # 为电影类型添加识别词转换
+                try:
+                    converted_result = convert_emby_series_name(title, 1)
+                    if converted_result:
+                        logger.info(f"🎬 电影名称转换成功: '{title}' -> '{converted_result['series_name']}'")
+                        converted_title = converted_result['series_name']
+                        identify_matched = True  # 标记匹配了识别词
+                    else:
+                        logger.debug(f"📝 未找到电影名称转换规则: '{title}'")
+                except Exception as e:
+                    logger.warning(f"⚠️ 电影名称转换时发生错误: {e}，使用原始名称")
             
             # 提取Provider ID信息（Emby刮削后的元数据）
             provider_ids = item.get('ProviderIds', {})
@@ -449,16 +480,19 @@ class WebhookHandler:
                 "type": media_type,
                 "year": str(year) if year else '',
                 "series_name": series_name or '',
-                "converted_series_name": converted_series_name or '', # 转换后的剧集名称
                 "season": str(season_number) if season_number else '',
-                "converted_season": str(converted_season_number) if converted_season_number else '', # 转换后的季度
                 "episode": str(episode_number) if episode_number else '',
                 "tmdb_id": tmdb_id or '',
                 "imdb_id": imdb_id or '',
                 "tvdb_id": tvdb_id or '',
                 "douban_id": douban_id or '',
                 "bangumi_id": bangumi_id or '',
-                "identify_matched": identify_matched,  # 添加识别词匹配标识
+                "converted_info": {  # 新增converted_info字段
+                    "converted_title": converted_title or title,
+                    "converted_series_name": converted_series_name or series_name or '',
+                    "converted_season_number": str(converted_season_number) if converted_season_number else '',
+                    "identify_matched": identify_matched
+                },
                 "timestamp": datetime.now().isoformat()
             }
             
@@ -560,21 +594,40 @@ class WebhookHandler:
             # 1. 检查库中的电影，使用电影名称进行匹配
             matches = search_video_by_keyword(movie_title, media_type='movie')
             
-            # 电影严格匹配策略：优先完全匹配的标题
+            # 电影严格匹配策略：优先完全匹配的标题和年份
             exact_matches = [match for match in matches 
                            if match.get('title', '').lower() == movie_title.lower()]
             
+            # 如果有年份信息，进一步筛选年份匹配的结果
+            if year and exact_matches:
+                year_matched = []
+                for match in exact_matches:
+                    match_year = match.get('year', '')
+                    if match_year and str(match_year) == str(year):
+                        year_matched.append(match)
+                        logger.debug(f"🎯 找到标题和年份完全匹配的电影: {match.get('title')} ({match_year})")
+                
+                # 如果找到年份匹配的结果，优先使用；否则使用标题匹配的结果
+                if year_matched:
+                    exact_matches = year_matched
+                    logger.info(f"✅ 使用标题+年份匹配结果: {len(year_matched)} 个匹配项")
+                else:
+                    logger.warning(f"⚠️ 标题匹配但年份不匹配，使用标题匹配结果: {movie_title} (期望年份: {year})")
+            elif year:
+                logger.debug(f"📅 年份信息可用但无精确标题匹配: {year}")
+            
             if not exact_matches:
                 # 未找到精确匹配：检查是否为识别词匹配
-                identify_matched = media_info.get('identify_matched', False)
+                converted_info = media_info.get('converted_info', {})
+                identify_matched = converted_info.get('identify_matched', False)
                 if identify_matched:
                     # 识别词匹配时直接使用关键词导入
                     logger.info(f"🎯 识别词匹配且库中无对应资源，直接使用关键词导入: {movie_title}")
-                    await self._import_movie_by_provider(None, 'keyword', movie_title, identify_matched)
+                    await self._import_movie_by_provider(None, 'keyword', movie_title, converted_info)
                 elif provider_id:
                     # 非识别词匹配时使用优先级 provider ID 自动导入电影
                     logger.info(f"📥 未找到匹配的电影，开始自动导入: {movie_title} ({year}) 使用 {provider_type.upper()} ID")
-                    await self._import_movie_by_provider(provider_id, provider_type, movie_title, identify_matched)
+                    await self._import_movie_by_provider(provider_id, provider_type, movie_title, converted_info)
                 else:
                     logger.warning(f"⚠️ 无法导入电影，缺少有效的 provider ID: {movie_title}")
             else:
@@ -609,9 +662,9 @@ class WebhookHandler:
                 
                 # 如果刷新失败，继续执行TMDB智能识别和导入
                 if not refresh_success:
-                    identify_matched = media_info.get('identify_matched', False)
+                    converted_info = media_info.get('converted_info', {})
                     await self._fallback_tmdb_search_and_import(movie_title, year, media_type='movie', 
-                                                               provider_id=provider_id, provider_type=provider_type, identify_matched=identify_matched)
+                                                               provider_id=provider_id, provider_type=provider_type, converted_info=converted_info)
                     
         except Exception as e:
             logger.error(f"❌ 电影智能管理处理失败: {e}", exc_info=True)
@@ -651,77 +704,70 @@ class WebhookHandler:
             matches = search_video_by_keyword(series_name, 'tv_series')
             logger.info(f"📊 剧名搜索结果: {len(matches)} 个")
             
-            # 计算匹配分数并筛选，重点关注season字段匹配
-            season_matches = []
-            for match in matches:
-                match_title = match.get('title', '').lower()
-                match_season = match.get('season', '')
-                series_name_lower = series_name.lower()
-                score = 0
-                
-                # 名称匹配评分
-                if series_name_lower == match_title:
-                    score += 100  # 完全匹配
-                elif series_name_lower in match_title:
-                    score += 70   # 包含匹配
-                elif match_title in series_name_lower:
-                    score += 50   # 被包含匹配
-                    
-                # 季度字段匹配评分（使用专门的season字段）
-                if season and match_season:
-                    try:
-                        match_season_num = int(match_season)
-                        if match_season_num == season:
-                            score += 100  # 季度完全匹配
-                            logger.debug(f"✅ 季度完全匹配: {match_title} S{season}")
-                        elif abs(match_season_num - season) <= 1:
-                            score += 50   # 季度相近匹配
-                            logger.debug(f"⚠️ 季度相近匹配: {match_title} S{match_season_num} vs S{season}")
-                    except (ValueError, TypeError):
-                        # 如果season字段不是数字，尝试字符串匹配
-                        if str(season) in str(match_season):
-                            score += 80
-                            logger.debug(f"📝 季度字符串匹配: {match_title} season={match_season}")
-                elif not season and not match_season:
-                    # 都没有季度信息，给予基础分数
-                    score += 20
-                        
-                # 年份匹配评分
-                if year:
-                    match_year = match.get('year', '')
-                    if match_year and str(year) == str(match_year):
-                        score += 30
-                    
-                if score > 60:  # 只添加高匹配度的结果
-                    season_matches.append({'match': match, 'score': score})
-                    logger.debug(f"📊 匹配项: {match_title} (season={match_season}) 分数={score}")
-                    
-            # 按匹配分数排序
-            season_matches.sort(key=lambda x: x['score'], reverse=True)
-            season_matches = [item['match'] for item in season_matches]
+            # 简化匹配逻辑：标题模糊匹配 + 季度匹配 + 年份匹配
+            def is_title_match(title1: str, title2: str) -> bool:
+                """检查标题是否模糊匹配"""
+                t1, t2 = title1.lower(), title2.lower()
+                return t1 == t2 or t1 in t2 or t2 in t1
             
-            logger.info(f"📊 Library匹配结果: 找到 {len(season_matches)} 个匹配项（基于season字段匹配）")
-            if season_matches:
-                for i, match in enumerate(season_matches[:20]):  # 只显示前20个
-                    logger.info(f"  {i+1}. {match.get('title')} (season={match.get('season')}, ID: {match.get('animeId')})")
-                        
-            # 检查是否有完全匹配的季度
-            exact_season_match = False
-            if season_matches and season:
-                for match in season_matches:
+            def is_season_match(season1, season2) -> bool:
+                """检查季度是否匹配"""
+                if not season1 or not season2:
+                    return False
+                try:
+                    return int(season1) == int(season2)
+                except (ValueError, TypeError):
+                    return str(season1) in str(season2) or str(season2) in str(season1)
+            
+            def is_year_match(year1, year2) -> bool:
+                """检查年份是否匹配"""
+                if not year1 or not year2:
+                    return False
+                return str(year1) == str(year2)
+            
+            # 第一轮匹配：标题 + 季度 + 年份
+            season_matches = []
+            series_name_lower = series_name.lower()
+            
+            for match in matches:
+                match_title = match.get('title', '')
+                match_season = match.get('season', '')
+                match_year = match.get('year', '')
+                
+                title_matched = is_title_match(series_name, match_title)
+                season_matched = is_season_match(season, match_season)
+                year_matched = is_year_match(year, match_year)
+                
+                # 优先级1：标题 + 季度 + 年份都匹配
+                if title_matched and season_matched and year_matched:
+                    season_matches.append(match)
+                    logger.debug(f"✅ 完全匹配: {match_title} S{match_season} ({match_year})")
+            
+            # 如果没有完全匹配，降级到标题 + 季度匹配
+            if not season_matches:
+                for match in matches:
+                    match_title = match.get('title', '')
                     match_season = match.get('season', '')
-                    try:
-                        if int(match_season) == season:
-                            exact_season_match = True
-                            break
-                    except (ValueError, TypeError):
-                        if str(season) in str(match_season):
-                            exact_season_match = True
-                            break
+                    
+                    title_matched = is_title_match(series_name, match_title)
+                    season_matched = is_season_match(season, match_season)
+                    
+                    if title_matched and season_matched:
+                        season_matches.append(match)
+                        logger.debug(f"⚠️ 标题+季度匹配: {match_title} S{match_season}")
+            
+            logger.info(f"📊 Library匹配结果: 找到 {len(season_matches)} 个匹配项")
+            if season_matches:
+                for i, match in enumerate(season_matches[:10]):  # 只显示前10个
+                    logger.info(f"  {i+1}. {match.get('title')} (season={match.get('season')}, year={match.get('year')}, ID: {match.get('animeId')})")
+            
+            # 检查是否有季度匹配
+            exact_season_match = len(season_matches) > 0
             
             # 如果没有找到季度匹配、没有完全匹配的季度或未匹配到具体集数，尝试通过TMDB API搜索
             # 但如果识别词匹配，则跳过TMDB搜索直接使用关键词导入
-            identify_matched = media_info.get('identify_matched', False)
+            converted_info = media_info.get('converted_info', {})
+            identify_matched = converted_info.get('identify_matched', False)
             should_search_tmdb = (
                 not season_matches or 
                 (season and not exact_season_match) or 
@@ -730,20 +776,8 @@ class WebhookHandler:
             
             # 如果识别词匹配但库中无对应资源，直接使用关键词导入
             if identify_matched and not season_matches:
-                # 导入时使用转换后结果
-                converted_series_name = media_info.get('converted_series_name', series_name)
-                converted_season_number = media_info.get('converted_season', season)
-                
-                # 确保converted_season_number是整数类型
-                if isinstance(converted_season_number, str):
-                    try:
-                        converted_season_number = int(converted_season_number)
-                    except (ValueError, TypeError):
-                        logger.warning(f"⚠️ 无法将converted_season_number转换为整数: {converted_season_number}，使用原始season值")
-                        converted_season_number = season if isinstance(season, int) else 1
-                
-                logger.info(f"🎯 识别词匹配且库中无对应资源，直接使用关键词导入: {converted_series_name}")
-                await self._import_episodes_by_provider(None, 'keyword', converted_season_number, [episode, episode + 1] if episode else None, converted_series_name, identify_matched)
+                logger.info(f"🎯 识别词匹配且库中无对应资源，直接使用关键词导入: {series_name}")
+                await self._import_episodes_by_provider(None, 'keyword', season, [episode, episode + 1] if episode else None, series_name, converted_info)
                 return True
             
             if should_search_tmdb:
@@ -810,8 +844,9 @@ class WebhookHandler:
                 # 未找到匹配项：检查是否有 provider ID 进行自动导入
                 if provider_id:
                     logger.info(f"📥 未找到匹配项，开始自动导入: {series_name} S{season} ({provider_type.upper()}: {provider_id})")
-                    identify_matched = media_info.get('identify_matched', False)
-                    await self._import_episodes_by_provider(provider_id, provider_type, season, [episode, episode + 1] if episode else None, series_name, identify_matched)
+                    converted_info = media_info.get('converted_info', {})
+                    identify_matched = converted_info.get('identify_matched', False)
+                    await self._import_episodes_by_provider(provider_id, provider_type, season, [episode, episode + 1] if episode else None, series_name, converted_info)
                 else:
                     # 尝试通过TMDB API搜索获取TMDB ID
                     logger.info(f"🔍 未找到匹配项且缺少 provider ID，尝试通过TMDB搜索: {series_name} ({year})")
@@ -823,8 +858,9 @@ class WebhookHandler:
                             found_tmdb_id = tmdb_search_result.get('tmdb_id')
                             logger.info(f"✅ TMDB搜索成功，找到匹配的剧集: {tmdb_search_result.get('name')} (ID: {found_tmdb_id})")
                             logger.info(f"📥 开始自动导入: {series_name} S{season} (TMDB: {found_tmdb_id})")
-                            identify_matched = media_info.get('identify_matched', False)
-                            await self._import_episodes_by_provider(found_tmdb_id, 'tmdb', season, [episode, episode + 1] if episode else None, series_name, identify_matched)
+                            converted_info = media_info.get('converted_info', {})
+                            identify_matched = converted_info.get('identify_matched', False)
+                            await self._import_episodes_by_provider(found_tmdb_id, 'tmdb', season, [episode, episode + 1] if episode else None, series_name, converted_info)
                         else:
                             logger.warning(f"⚠️ TMDB搜索结果验证失败: {series_name}")
                             logger.debug(f"💡 建议: 请检查剧集名称和年份是否正确，或在Emby中添加正确的TMDB刮削信息")
@@ -848,8 +884,8 @@ class WebhookHandler:
                                 source_id = sources[0].get('sourceId')
                                 if source_id:
                                     # 传递剧集名称和年份，用于TMDB搜索
-                                    identify_matched = media_info.get('identify_matched', False)
-                                    await self._refresh_episodes(source_id, [episode, episode + 1], provider_id, season, series_name, year, identify_matched)
+                                    converted_info = media_info.get('converted_info', {})
+                                    await self._refresh_episodes(source_id, [episode, episode + 1], provider_id, season, series_name, year, converted_info)
                                     refresh_success = True
                                 else:
                                     logger.error(f"❌ 无法获取源ID: {selected_match.get('title')}")
@@ -865,15 +901,16 @@ class WebhookHandler:
                 
                 # 如果刷新失败，继续执行TMDB智能识别
                 if not refresh_success:
-                    identify_matched = media_info.get('identify_matched', False)
+                    converted_info = media_info.get('converted_info', {})
+                    identify_matched = converted_info.get('identify_matched', False)
                     await self._fallback_tmdb_search_and_import(series_name, year, season, episode, 'tv',
-                                                               provider_id=provider_id, provider_type=provider_type, identify_matched=identify_matched)
+                                                               provider_id=provider_id, provider_type=provider_type, converted_info=converted_info)
                     
         except Exception as e:
             logger.error(f"❌ 电视剧智能管理处理失败: {e}", exc_info=True)
     
     async def _fallback_tmdb_search_and_import(self, title: str, year: str = None, season: int = None, episode: int = None, 
-                                             media_type: str = 'tv', provider_id: str = None, provider_type: str = None, identify_matched: bool = False):
+                                             media_type: str = 'tv', provider_id: str = None, provider_type: str = None, converted_info: Dict[str, Any] = None):
         """TMDB辅助查询和导入的通用方法
         
         Args:
@@ -884,16 +921,20 @@ class WebhookHandler:
             media_type: 媒体类型 ('tv' 或 'movie')
             provider_id: 优先级provider ID
             provider_type: 优先级provider类型
+            converted_info: 转换信息字典
         """
         try:
+            # 从converted_info中提取identify_matched
+            identify_matched = converted_info.get('identify_matched', False) if converted_info else False
+            
             # 如果识别词匹配，直接使用关键词导入，跳过TMDB搜索
             if identify_matched:
                 logger.info(f"🎯 识别词匹配，直接使用关键词导入: {title}")
                 if media_type == 'movie':
-                    await self._import_movie_by_provider(None, 'keyword', title, identify_matched)
+                    await self._import_movie_by_provider(None, 'keyword', title, converted_info)
                     return
                 elif media_type == 'tv':
-                    await self._import_episodes_by_provider(None, 'keyword', season, [episode, episode + 1] if episode else None, title, identify_matched)
+                    await self._import_episodes_by_provider(None, 'keyword', season, [episode, episode + 1] if episode else None, title, converted_info)
                     return
             
             # 优先使用provider信息进行导入
@@ -901,10 +942,10 @@ class WebhookHandler:
                 logger.info(f"📥 使用优先级provider进行导入: {title} ({provider_type.upper()}: {provider_id})")
                 
                 if media_type == 'movie':
-                    await self._import_movie_by_provider(provider_id, provider_type, title, identify_matched)
+                    await self._import_movie_by_provider(provider_id, provider_type, title, converted_info)
                     return
                 elif media_type == 'tv':
-                    await self._import_episodes_by_provider(provider_id, provider_type, season, None, title, identify_matched)
+                    await self._import_episodes_by_provider(provider_id, provider_type, season, None, title, converted_info)
                     return
             
             if media_type == 'movie':
@@ -1252,14 +1293,14 @@ class WebhookHandler:
         except Exception as e:
             logger.error(f"❌ 导入电影时发生错误 (TMDB: {tmdb_id}): {e}", exc_info=True)
     
-    async def _import_movie_by_provider(self, provider_id: str, provider_type: str = 'tmdb', movie_title: str = None, identify_matched: bool = False):
+    async def _import_movie_by_provider(self, provider_id: str, provider_type: str = 'tmdb', movie_title: str = None, converted_info: Dict[str, Any] = None):
         """使用优先级 provider 导入单个电影
         
         Args:
             provider_id: Provider ID (tmdb_id, tvdb_id, imdb_id, douban_id, 或 bangumi_id)
             provider_type: Provider 类型 ('tmdb', 'tvdb', 'imdb', 'douban', 'bangumi')
-            movie_title: 电影标题（可选，用于通知显示）
-            identify_matched: 是否为识别词匹配
+            movie_title: 电影标题
+            converted_info: 转换信息字典
         """
         try:
             logger.info(f"📥 开始导入电影 ({provider_type.upper()}: {provider_id})")
@@ -1281,14 +1322,18 @@ class WebhookHandler:
                     use_keyword_mode = True
             
             # 构建导入参数
-            if identify_matched and movie_title:
-                # 识别词匹配时使用关键词模式
+            converted_info = converted_info or {}
+            identify_matched = converted_info.get('identify_matched', False)
+            converted_title = converted_info.get('converted_title', movie_title)
+            
+            if identify_matched and converted_title:
+                # 识别词匹配时使用关键词模式，优先使用转换后的标题
                 import_params = {
                     "searchType": "keyword",
-                    "searchTerm": movie_title,
+                    "searchTerm": converted_title,
                     "originalKeyword": movie_title
                 }
-                logger.info(f"🎯 使用关键词模式导入电影 (识别词匹配): {movie_title}")
+                logger.info(f"🎯 使用关键词模式导入电影 (识别词匹配): {movie_title} -> {converted_title}")
             elif use_keyword_mode and movie_title:
                 # TMDB详情获取失败时自动切换至关键字模式
                 import_params = {
@@ -1320,9 +1365,6 @@ class WebhookHandler:
                 'ProviderType': provider_type
             }
             
-            # 如果有电影标题，添加到媒体信息中
-            if movie_title:
-                media_info['MovieTitle'] = movie_title
             
             if response and response.get('success'):
                 # 从data字段中获取taskId
@@ -1453,7 +1495,7 @@ class WebhookHandler:
         except Exception as e:
             logger.error(f"❌ 刷新电影时发生错误 (源ID: {source_id}): {e}", exc_info=True)
     
-    async def _import_episodes_by_provider(self, provider_id: str, provider_type: str, season: int, episodes: list, series_name: str = None, identify_matched: bool = False):
+    async def _import_episodes_by_provider(self, provider_id: str, provider_type: str, season: int, episodes: list, series_name: str = None, converted_info: Dict[str, Any] = None):
         """根据provider类型导入指定集数
         
         Args:
@@ -1461,11 +1503,21 @@ class WebhookHandler:
             provider_type: Provider类型 ('tmdb', 'tvdb', 'imdb', 'douban', 'bangumi')
             season: 季度
             episodes: 集数列表
-            series_name: 剧集名称（可选）
+            series_name: 剧集名称
+            converted_info: 转换信息字典
         """
         if not episodes:
             logger.warning(f"⚠️ 集数列表为空，跳过导入: {provider_type.upper()} {provider_id} S{season}")
             return
+        
+        # 从converted_info中提取identify_matched和converted_series_name
+        identify_matched = converted_info.get('identify_matched', False) if converted_info else False
+        converted_series_name = converted_info.get('converted_series_name') if converted_info else None
+        converted_season_number = converted_info.get('converted_season_number') if converted_info else None
+        
+        # 识别词匹配时优先使用转换后的标题
+        effective_series_name = converted_series_name if (identify_matched and converted_series_name) else series_name
+        effective_season_number = converted_season_number if (identify_matched and converted_season_number) else season
         
         # 根据provider类型设置搜索参数
         search_type_map = {
@@ -1538,17 +1590,17 @@ class WebhookHandler:
                     continue
                 
                 # 构建导入参数
-                if identify_matched and series_name:
-                    # 识别词匹配时使用关键词模式
+                if identify_matched:
+                    # 识别词匹配时使用关键词模式，优先使用转换后的标题
                     import_params = {
                         "searchType": "keyword",
-                        "searchTerm": series_name,
+                        "searchTerm": effective_series_name,
                         "mediaType": "tv_series",
-                        "season": season,
+                        "season": effective_season_number,
                         "episode": episode_num,
-                        "originalKeyword": series_name  # 添加原始关键词用于识别词匹配
+                        "originalKeyword": effective_series_name
                     }
-                    logger.info(f"🎯 使用关键词模式导入: {series_name} S{season:02d}E{episode_num:02d}")
+                    logger.info(f"🎯 使用关键词模式导入(识别词匹配): {effective_series_name} S{season:02d}E{episode_num:02d}")
                 elif use_keyword_mode and series_name:
                     # TMDB详情获取失败时自动切换至关键词模式
                     import_params = {
@@ -1689,7 +1741,7 @@ class WebhookHandler:
             
         return None, None, None
     
-    async def _refresh_episodes(self, source_id: str, episodes: list, tmdb_id: Optional[str], season_num: int, series_name: Optional[str] = None, year: Optional[str] = None, identify_matched: bool = False):
+    async def _refresh_episodes(self, source_id: str, episodes: list, tmdb_id: Optional[str], season_num: int, series_name: Optional[str] = None, year: Optional[str] = None, converted_info: Dict[str, Any] = None):
         """刷新指定集数
         
         Args:
@@ -1699,8 +1751,10 @@ class WebhookHandler:
             season_num: 季度号
             series_name: 剧集名称（用于TMDB搜索）
             year: 年份（用于TMDB搜索）
-            identify_matched: 是否为识别词匹配
+            converted_info: 转换信息字典
         """
+        # 从converted_info中提取identify_matched
+        identify_matched = converted_info.get('identify_matched', False) if converted_info else False
         try:
             # 先获取源的分集列表来获取episodeId
             episodes_response = call_danmaku_api('GET', f'/library/source/{source_id}/episodes')
@@ -1735,21 +1789,8 @@ class WebhookHandler:
                 if not episode_info:
                     # 当集数不存在时，根据识别词匹配状态决定处理方式
                     if identify_matched:
-                        # 识别词匹配时，直接使用keyword/auto导入该集, 使用识别词导入
-                        converted_result = convert_emby_series_name(series_name, season_number)
-                        converted_series_name = converted_result['series_name']
-                        converted_season_number = converted_result['season_number']
-                        
-                        # 确保converted_season_number是整数类型（防御性编程）
-                        if isinstance(converted_season_number, str):
-                            try:
-                                converted_season_number = int(converted_season_number)
-                            except (ValueError, TypeError):
-                                logger.warning(f"⚠️ 无法将converted_season_number转换为整数: {converted_season_number}，使用原始season_number值")
-                                converted_season_number = season_number if isinstance(season_number, int) else 1
-
-                        logger.info(f"🔍 未找到第{episode}集且识别词匹配，直接关键词导入第{episode}集: {converted_series_name} S{converted_season_number}E{episode:02d}")
-                        await self._import_episodes_by_provider(None, 'keyword', converted_season_number, [episode], converted_series_name, identify_matched)
+                        logger.info(f"🔍 未找到第{episode}集且识别词匹配，直接关键词导入第{episode}集: {series_name} S{season_number}E{episode:02d}")
+                        await self._import_episodes_by_provider(None, 'keyword', season_number, [episode], series_name, converted_info)
                     else:
                         # 非识别词匹配时，使用原有TMDB搜索逻辑
                         current_tmdb_id = tmdb_id
