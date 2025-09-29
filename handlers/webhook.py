@@ -1902,11 +1902,11 @@ class WebhookHandler:
                     'TotalCount': total_episodes
                 }
                 
-                # 添加剧集名称和TMDB ID（如果有）
+                # 添加剧集名称和Provider ID（如果有）
                 if series_name:
                     media_info['SeriesName'] = series_name
-                if tmdb_id:
-                    media_info['TmdbId'] = tmdb_id
+                if provider_id and provider_type == 'tmdb':
+                    media_info['TmdbId'] = provider_id
                 if year:
                     media_info['Year'] = year
                 
