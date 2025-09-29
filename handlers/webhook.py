@@ -1814,8 +1814,28 @@ class WebhookHandler:
                         
                         if current_provider_id:
                             logger.warning(f"⚠️ 未找到第{episode}集的episodeId，收集到导入列表")
-                            # 收集需要导入的集数信息
-                            episodes_to_import.append((current_provider_id, current_provider_type, season_num, episode))
+                            
+                            # 如果是TMDB类型，先尝试获取详情验证
+                            final_provider_type = current_provider_type
+                            final_series_name = series_name
+                            
+                            if current_provider_type == 'tmdb':
+                                try:
+                                    tmdb_info = get_tmdb_media_details(current_provider_id, 'tv_series')
+                                    if tmdb_info and tmdb_info.get('name'):
+                                        final_series_name = tmdb_info.get('name')
+                                        logger.info(f"✅ TMDB详情获取成功: {final_series_name}")
+                                    else:
+                                        # TMDB详情获取失败，切换到keyword模式
+                                        final_provider_type = 'keyword'
+                                        logger.warning(f"⚠️ TMDB详情获取失败，切换到keyword模式")
+                                except Exception as e:
+                                    # TMDB详情获取异常，切换到keyword模式
+                                    final_provider_type = 'keyword'
+                                    logger.warning(f"⚠️ TMDB详情获取异常: {e}，切换到keyword模式")
+                            
+                            # 收集需要导入的集数信息，包含series_name
+                            episodes_to_import.append((current_provider_id, final_provider_type, season_num, episode, final_series_name))
                         else:
                             logger.info(f"ℹ️ 未找到第{episode}集的episodeId且无法获取Provider ID，跳过导入")
                     continue
@@ -1930,8 +1950,8 @@ class WebhookHandler:
         """批量导入多个集数，并发送合并后的通知
         
         Args:
-            episodes_to_import: 需要导入的集数列表，每个元素是(tmdb_id, season_num, episode)的元组
-            series_name: 剧集名称（用于通知）
+            episodes_to_import: 需要导入的集数列表，每个元素是(provider_id, provider_type, season_num, episode, series_name)的元组
+            series_name: 剧集名称（用于通知，已废弃，使用episodes_to_import中的series_name）
         """
         try:
             total_success = 0
@@ -1942,7 +1962,7 @@ class WebhookHandler:
             failed_episodes = []
             
             # 批量处理每个需要导入的集数
-            for provider_id, provider_type, season_num, episode in episodes_to_import:
+            for provider_id, provider_type, season_num, episode, episode_series_name in episodes_to_import:
                 try:
                     # 根据provider_type构建导入参数
                     search_type_map = {
@@ -1956,9 +1976,15 @@ class WebhookHandler:
                     
                     search_type = search_type_map.get(provider_type, 'tmdb')
                     
+                    # 根据provider_type确定searchTerm
+                    if provider_type == 'keyword':
+                        search_term = episode_series_name or str(provider_id)
+                    else:
+                        search_term = str(provider_id)
+                    
                     import_params = {
                         "searchType": search_type,
-                        "searchTerm": str(provider_id),
+                        "searchTerm": search_term,
                         "mediaType": "tv_series",
                         "importMethod": "auto",
                         "season": season_num,
@@ -1975,7 +2001,7 @@ class WebhookHandler:
                         params=import_params
                     )
                     
-                    imported_episodes.append((provider_id, provider_type, season_num, episode))
+                    imported_episodes.append((provider_id, provider_type, season_num, episode, episode_series_name))
                     
                     if response and response.get("success"):
                         logger.info(f"✅ 单集导入成功: S{season_num:02d}E{episode:02d}")
@@ -1998,21 +2024,10 @@ class WebhookHandler:
             # 如果有导入的集数，发送合并后的通知
             if imported_episodes:
                 # 获取第一个集数的信息用于通知（假设所有集数属于同一剧集）
-                first_provider_id, first_provider_type, first_season, _ = imported_episodes[0]
+                first_provider_id, first_provider_type, first_season, _, first_series_name = imported_episodes[0]
                 
-                # 根据provider_type获取剧集名称
-                provider_series_name = None
-                try:
-                    if first_provider_type == 'tmdb':
-                        from utils.tmdb_api import get_tmdb_media_details
-                        tmdb_info = get_tmdb_media_details(first_provider_id, 'tv_series')
-                        if tmdb_info:
-                            provider_series_name = tmdb_info.get('name')
-
-                except Exception as e:
-                    logger.warning(f"⚠️ 获取{first_provider_type.upper()}详细信息时出错: {e}")
-                
-                display_name = series_name or provider_series_name or f"{first_provider_type.upper()} {first_provider_id}"
+                # 使用episodes_to_import中的series_name作为显示名称
+                display_name = first_series_name or f"{first_provider_type.upper()} {first_provider_id}"
                 
                 # 构建媒体信息用于回调通知
                 media_info = {
@@ -2021,7 +2036,7 @@ class WebhookHandler:
                     'ProviderId': first_provider_id,
                     'ProviderType': first_provider_type,
                     'Season': first_season,
-                    'Episodes': [ep for _, _, _, ep in imported_episodes],
+                    'Episodes': [ep for _, _, _, ep, _ in imported_episodes],
                     'SuccessCount': total_success,
                     'FailedCount': total_failed,
                     'TotalCount': len(imported_episodes)
@@ -2030,8 +2045,8 @@ class WebhookHandler:
                 # 添加剧集名称（如果有）
                 if series_name:
                     media_info['SeriesName'] = series_name
-                elif provider_series_name:
-                    media_info['SeriesName'] = provider_series_name
+                elif first_series_name:
+                    media_info['SeriesName'] = first_series_name
                 
                 # 构建详细的状态消息
                 # 处理task_ids参数
