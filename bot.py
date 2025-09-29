@@ -229,8 +229,6 @@ async def _setup_bot_commands(application: Application):
         BotCommand("tokens", "管理API令牌"),
         BotCommand("tasks", "查看任务列表"),
         BotCommand("users", "管理用户权限"),
-        BotCommand("identify", "管理识别词映射"),
-        BotCommand("blacklist", "管理webhook黑名单"),
         BotCommand("help", "查看帮助信息"),
         BotCommand("cancel", "取消当前操作")
     ]
@@ -247,8 +245,6 @@ from handlers.import_media import (
     create_import_auto_handler,
     create_episode_input_handler
 )
-
-from handlers.identify_management import create_identify_handler
 
 # 从handlers模块导入通用处理器
 from handlers.general import start_command, help_command, cancel_command
@@ -269,11 +265,6 @@ def _setup_handlers(application, handlers_module, callback_module):
     import_auto_handler = create_import_auto_handler()
     application.add_handler(import_auto_handler)
     current_handlers["import_auto_handler"] = import_auto_handler
-    
-    # 识别词处理器
-    identify_handler = create_identify_handler()
-    application.add_handler(identify_handler)
-    current_handlers["identify_handler"] = identify_handler
     
     # 集数输入处理器
     episode_input_handler = create_episode_input_handler()
@@ -311,11 +302,6 @@ def _setup_handlers(application, handlers_module, callback_module):
     application.add_handler(tasks_handler)
     current_handlers["tasks_handler"] = tasks_handler
     
-    # 黑名单管理处理器
-    from handlers.blacklist_management import create_blacklist_handler
-    blacklist_handler = create_blacklist_handler()
-    application.add_handler(blacklist_handler)
-    current_handlers["blacklist_handler"] = blacklist_handler
     
     # 3. 注册通用命令处理器
     start_handler = CommandHandler("start", wrap_with_session_management(start_command))
@@ -426,25 +412,7 @@ async def init_bot() -> Application:
     bot_task_polling_manager.bot = application.bot
     logger.info("🔌 Bot task polling manager bot instance set")
     
-    # 步骤7: 初始化识别词配置文件
-    try:
-        from utils.identify_config import initialize_identify_config
-        if initialize_identify_config():
-            logger.info("✅ 识别词配置文件初始化成功")
-        else:
-            logger.warning("⚠️ 识别词配置文件初始化失败")
-    except Exception as e:
-        logger.error(f"❌ 识别词配置文件初始化异常: {e}")
-
-    # 步骤7: 初始化黑名单配置文件
-    try:
-        from utils.blacklist_config import initialize_blacklist_config
-        if initialize_blacklist_config():
-            logger.info("✅ 黑名单配置文件初始化成功")
-        else:
-            logger.warning("⚠️ 黑名单配置文件初始化失败")
-    except Exception as e:
-        logger.error(f"❌ 黑名单配置文件初始化异常: {e}")
+    # 黑名单配置文件初始化已删除
 
     # 步骤8: 设置webhook处理器的Bot实例
     try:

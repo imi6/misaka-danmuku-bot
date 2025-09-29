@@ -46,17 +46,6 @@ def get_users_handler():
     return CommandHandler("users", wrap_conversation_entry_point(users_command))
 
 
-def get_identify_handler():
-    """获取识别词映射管理命令处理器"""
-    from handlers.identify_management import identify_command
-    return CommandHandler("identify", wrap_conversation_entry_point(identify_command))
-
-
-def get_blacklist_handler():
-    """获取黑名单管理命令处理器"""
-    from handlers.blacklist_management import blacklist_command
-    return CommandHandler("blacklist", wrap_conversation_entry_point(blacklist_command))
-
 
 def get_start_handler():
     """获取start命令处理器"""
@@ -91,8 +80,6 @@ def get_global_fallbacks():
     #     get_tokens_handler(),
     #     get_tasks_handler(),
     #     get_users_handler(),
-    #     get_identify_handler(),
-    #     get_blacklist_handler(),
     #     get_start_handler(),
     #     get_help_handler()
     # ])

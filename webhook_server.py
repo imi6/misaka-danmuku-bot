@@ -22,6 +22,7 @@ class WebhookServer:
         
         # 添加路由
         app.router.add_post('/api/webhook/emby', self.handle_emby_webhook)
+        app.router.add_post('/api/webhook/jellyfin', self.handle_jellyfin_webhook)
         
         # 添加健康检查端点
         app.router.add_get('/health', self.health_check)
@@ -53,6 +54,32 @@ class WebhookServer:
             logger.error(f"Error handling Emby webhook: {e}", exc_info=True)
             return web.Response(status=500, text="Internal Server Error")
     
+    async def handle_jellyfin_webhook(self, request: web.Request) -> web.Response:
+        """处理Jellyfin webhook请求"""
+        try:
+            # 验证API密钥
+            api_key = request.query.get('api_key')
+            if not api_key or api_key != config.webhook.api_key:
+                logger.warning(f"Invalid API key in webhook request: {mask_sensitive_data(api_key) if api_key else 'None'}")
+                return web.Response(status=401, text="Unauthorized")
+            
+            # 获取请求体
+            try:
+                data = await request.json()
+            except Exception as e:
+                logger.error(f"Failed to parse webhook JSON: {e}")
+                return web.Response(status=400, text="Invalid JSON")
+            
+            # 处理webhook数据
+            await webhook_handler.handle_jellyfin_webhook(data, api_key)
+            
+            return web.Response(status=200, text="OK")
+            
+        except Exception as e:
+            logger.error(f"Error handling Jellyfin webhook: {e}", exc_info=True)
+            return web.Response(status=500, text="Internal Server Error")
+    
+
     async def health_check(self, request: web.Request) -> web.Response:
         """健康检查端点"""
         return web.Response(status=200, text="Webhook server is running")
