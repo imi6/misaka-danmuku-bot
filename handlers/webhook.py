@@ -101,7 +101,7 @@ class WebhookHandler:
             tmdb_info = f" [TMDB: {media_info['tmdb_id']}]" if media_info.get('tmdb_id') else ""
             logger.info(
                 f"🎬 Emby播放开始: {media_info['title']} "
-                f"(用户: {media_info.get('user', '未知')}){tmdb_info}"
+                f"{tmdb_info}"
             )
             
             # 执行智能影视库管理流程
@@ -179,8 +179,8 @@ class WebhookHandler:
             # 记录播放事件
             tmdb_info = f" [TMDB: {media_info['tmdb_id']}]" if media_info.get('tmdb_id') else ""
             logger.info(
-                f"🎬 Emby播放开始: {media_info['title']} "
-                f"(用户: {media_info.get('user', '未知')}){tmdb_info}"
+                f"🎬 Jellyfin播放开始: {media_info['title']} "
+                f"{tmdb_info}"
             )
             
             # 执行智能影视库管理流程
@@ -194,7 +194,7 @@ class WebhookHandler:
             }
             
         except Exception as e:
-            logger.error(f"❌ 处理Emby webhook时发生错误: {e}", exc_info=True)
+            logger.error(f"❌ 处理Jellyfin webhook时发生错误: {e}", exc_info=True)
             return {
                 "success": False,
                 "error": f"处理webhook时发生错误: {str(e)}",
@@ -1966,7 +1966,7 @@ class WebhookHandler:
                         "originalKeyword": f"{provider_type.upper()} ID: {provider_id}"  # 添加原始关键词用于识别词匹配
                     }
                     
-                    logger.info(f"🚀 开始导入单集: TMDB {tmdb_id} S{season_num:02d}E{episode:02d}")
+                    logger.info(f"🚀 开始导入单集: {provider_type.upper()} {provider_id} S{season_num:02d}E{episode:02d}")
                     
                     # 调用导入API
                     response = call_danmaku_api(
