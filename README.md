@@ -80,9 +80,7 @@ docker-compose up -d
 ```
 app/
 ├── config/            # 配置文件目录
-│   └── blacklist.txt  # Webhook同步黑名单（自动生成,支持手动更新重载）
 │   └── config.json    # 基础配置（自动生成/最好不手动修改）
-│   └── identify.txt   # 自定义识别词（自动生成,支持手动更新重载）
 │   └── user.json      # 用户权限配置（自动生成）
 └── logs/              # 日志文件目录
     └── app.log        # 应用日志
@@ -195,8 +193,6 @@ python bot.py
 - ❌ 刷新数据源 (`/refresh`) - 需要管理员权限
 - ❌ Token 管理 (`/tokens`) - 需要管理员权限
 - ❌ 用户权限管理 (`/users`) - 需要管理员权限
-- ❌ Webhook黑名单管理 (`/blacklist`) - 需要管理员权限
-- ❌ 自定义识别词管理 (`/identify`) - 需要管理员权限
 
 ### 用户管理功能
 
