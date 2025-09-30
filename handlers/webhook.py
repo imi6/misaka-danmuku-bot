@@ -1790,8 +1790,8 @@ class WebhookHandler:
                 if not episode_info:
                     # 当集数不存在时，根据识别词匹配状态决定处理方式
                     if identify_matched:
-                        logger.info(f"🔍 未找到第{episode}集且识别词匹配，直接关键词导入第{episode}集: {series_name} S{season_number}E{episode:02d}")
-                        await self._import_episodes_by_provider(None, 'keyword', season_number, [episode], series_name, converted_info)
+                        logger.info(f"🔍 未找到第{episode}集且识别词匹配，直接关键词导入第{episode}集: {series_name} S{season_num}E{episode:02d}")
+                        await self._import_episodes_by_provider(None, 'keyword', season_num, [episode], series_name, converted_info)
                     else:
                         # 非识别词匹配时，使用provider信息进行导入判断
                         current_provider_id = provider_id
