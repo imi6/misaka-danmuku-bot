@@ -362,12 +362,9 @@ class ConfigManager:
     _initialization_logged = False
     
     def __init__(self):
-        # 使用app/config目录存储配置文件
-        self.config_file_path = Path("app/config/config.json")
+        # 使用app/config目录存储用户配置文件
         self.user_config_file_path = Path("app/config/user.json")
-        self._json_config = {}
         self._user_config = {}
-        self._load_json_config()
         self._load_user_config()
         self._telegram: Optional[TelegramConfig] = None
         self._danmaku_api: Optional[DanmakuAPIConfig] = None
@@ -378,28 +375,10 @@ class ConfigManager:
         self._proxy: Optional[ProxyConfig] = None
         self._app: Optional[AppConfig] = None
         self._load_config()
-    
-    def _load_json_config(self):
-        """加载JSON配置文件"""
-        if not self.config_file_path.exists():
-            if not ConfigManager._initialization_logged:
-                logger.info(f"ℹ️ JSON配置文件不存在，将创建默认配置: {self.config_file_path}")
-            self._create_default_config()
-            return
         
-        try:
-            import json
-            with open(self.config_file_path, 'r', encoding='utf-8') as f:
-                config_data = json.load(f)
-                self._json_config = config_data
-                if not ConfigManager._initialization_logged:
-                    logger.info(f"✅ JSON配置文件已加载: {self.config_file_path}")
-        except json.JSONDecodeError as e:
-            logger.error(f"❌ JSON配置文件格式错误: {e}")
-            self._json_config = {}
-        except Exception as e:
-            logger.error(f"❌ 加载JSON配置文件失败: {e}")
-            self._json_config = {}
+        # 标记初始化完成
+        if not ConfigManager._initialization_logged:
+            ConfigManager._initialization_logged = True
     
     def _load_user_config(self):
         """加载用户配置文件"""
@@ -421,59 +400,6 @@ class ConfigManager:
         except Exception as e:
             logger.error(f"❌ 加载用户配置文件失败: {e}")
             self._user_config = {"allowed_user_ids": [], "admin_user_ids": []}
-    
-    def _create_default_config(self):
-        """创建默认配置文件"""
-        try:
-            import json
-            # 确保目录存在
-            self.config_file_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            # 创建默认配置
-            default_config = {
-                "telegram": {
-                    "connect_timeout": 30.0,
-                    "read_timeout": 30.0,
-                    "pool_timeout": 60.0,
-                    "connection_pool_size": 20
-                },
-                "danmaku_api": {
-                    "timeout": 60,
-                    "headers": {
-                        "Content-Type": "application/json",
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-                    }
-                },
-                "tmdb": {
-                    "base_url": "https://api.themoviedb.org/3"
-                },
-                "tvdb": {
-                    "base_url": "https://api4.thetvdb.com/v4"
-                },
-                "bgm": {
-                    "base_url": "https://api.bgm.tv"
-                },
-                "webhook": {
-                    "port": 7769,
-                    "enabled": False
-                },
-                "app": {
-                    "log_level": "INFO",
-                    "debug": False,
-                    "environment": "production",
-                    "api_timeout": 60
-                }
-            }
-            
-            with open(self.config_file_path, 'w', encoding='utf-8') as f:
-                json.dump(default_config, f, indent=2, ensure_ascii=False)
-            
-            self._json_config = default_config
-            logger.info(f"✅ 默认配置文件已创建: {self.config_file_path}")
-            
-        except Exception as e:
-            logger.error(f"❌ 创建默认配置文件失败: {e}")
-            self._json_config = {}
     
     def _create_default_user_config(self):
         """创建默认用户配置文件"""
@@ -560,8 +486,8 @@ class ConfigManager:
                 admin_user_ids=admin_ids,
                 connect_timeout=float(os.getenv("TELEGRAM_CONNECT_TIMEOUT", 30.0)),
                 read_timeout=float(os.getenv("TELEGRAM_READ_TIMEOUT", 30.0)),
-                pool_timeout=float(os.getenv("TELEGRAM_POOL_TIMEOUT", 60.0)),
-                connection_pool_size=int(os.getenv("TELEGRAM_CONNECTION_POOL_SIZE", 20))
+                pool_timeout=float(os.getenv("TELEGRAM_POOL_TIMEOUT", 30.0)),
+                connection_pool_size=int(os.getenv("TELEGRAM_CONNECTION_POOL_SIZE", 50))
             )
             
             # 加载弹幕API配置
@@ -614,7 +540,6 @@ class ConfigManager:
             
             if not ConfigManager._initialization_logged:
                 logger.info("✅ 配置加载成功")
-                ConfigManager._initialization_logged = True
             
         except Exception as e:
             logger.error(f"❌ 配置加载失败: {e}")
@@ -770,55 +695,6 @@ class ConfigManager:
         """检查用户是否为管理员"""
         return user_id in self._telegram.admin_user_ids
     
-    def get_config_summary(self) -> Dict[str, Any]:
-        """获取配置摘要（隐藏敏感信息）"""
-        return {
-            "telegram": {
-                "bot_token": "***" + self.telegram.bot_token[-4:] if self.telegram.bot_token else "未配置",
-                "allowed_users_count": len(self.telegram.allowed_user_ids),
-                "timeouts": {
-                    "connect": self.telegram.connect_timeout,
-                    "read": self.telegram.read_timeout,
-                    "pool": self.telegram.pool_timeout
-                },
-                "pool_size": self.telegram.connection_pool_size
-            },
-            "danmaku_api": {
-                "base_url": self.danmaku_api.base_url,
-                "api_key": "***" + self.danmaku_api.api_key[-4:] if self.danmaku_api.api_key else "未配置",
-                "timeout": self.danmaku_api.timeout
-            },
-            "tmdb": {
-                "enabled": self.tmdb.enabled,
-                "api_key": "***" + self.tmdb.api_key[-4:] if self.tmdb.api_key else "未配置",
-                "base_url": self.tmdb.base_url
-            },
-            "tvdb": {
-                "enabled": self.tvdb.enabled,
-                "api_key": "***" + self.tvdb.api_key[-4:] if self.tvdb.api_key else "未配置",
-                "base_url": self.tvdb.base_url
-            },
-            "bgm": {
-                "enabled": self.bgm.enabled,
-                "base_url": self.bgm.base_url,
-                "has_access_token": bool(self.bgm.access_token)
-            },
-            "webhook": {
-                "enabled": self.webhook.enabled,
-                "port": self.webhook.port,
-                "has_api_key": bool(self.webhook.api_key)
-            },
-            "proxy": {
-                "enabled": self.proxy.enabled,
-                "url": self.proxy.url if self.proxy.enabled else "未配置"
-            },
-            "app": {
-                "log_level": self.app.log_level,
-                "debug": self.app.debug,
-                "environment": self.app.environment
-            }
-        }
-
 
 # 创建全局配置实例
 config = ConfigManager()

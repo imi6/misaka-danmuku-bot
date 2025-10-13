@@ -80,7 +80,6 @@ docker-compose up -d
 ```
 app/
 ├── config/            # 配置文件目录
-│   └── config.json    # 基础配置（自动生成/最好不手动修改）
 │   └── user.json      # 用户权限配置（自动生成）
 └── logs/              # 日志文件目录
     └── app.log        # 应用日志
@@ -92,15 +91,13 @@ app/
 - 通过 Docker 卷映射可实现数据持久化
 - 重启容器后配置和用户数据不会丢失
 
-
-
 ### Webhook 自动入库/更新
 
 - `WEBHOOK_PORT=7769`
 - `WEBHOOK_API_KEY=自定义的Webhook密钥`
 - `WEBHOOK_CALLBACK_ENABLED=true`
 
-emby添加播放通知（http://ip:WEBHOOK_PORT/api/webhook/emby?api_key=WEBHOOK_API_KEY）
+emby 添加播放通知（http://ip:WEBHOOK_PORT/api/webhook/emby?api_key=WEBHOOK_API_KEY）
 
 **重要说明：**
 
@@ -134,13 +131,13 @@ emby添加播放通知（http://ip:WEBHOOK_PORT/api/webhook/emby?api_key=WEBHOOK
 - `TVDB_API_KEY`: TVDB API 密钥（用于 TVDB 链接解析和媒体信息获取，从 https://thetvdb.com/api-information 获取）
 - `BGM_ACCESS_TOKEN`: Bangumi API 访问令牌（用于 BGM 链接解析和媒体信息获取，从 https://bgm.tv/dev/app 创建应用获取）
 - `WEBHOOK_PORT`: Webhook 监听端口（默认 7769）
-- `WEBHOOK_API_KEY`: Webhook API 密钥（用于验证请求来源）-- 使用方式同御坂通知，端口改成WEBHOOK_PORT自定义的即可
-- `WEBHOOK_CALLBACK_CHAT_ID`: Webhook消息通知用户id，默认第一个管理员账号
-- `WEBHOOK_CALLBACK_ENABLED`: Webhook消息是否通知（默认true）
+- `WEBHOOK_API_KEY`: Webhook API 密钥（用于验证请求来源）-- 使用方式同御坂通知，端口改成 WEBHOOK_PORT 自定义的即可
+- `WEBHOOK_CALLBACK_CHAT_ID`: Webhook 消息通知用户 id，默认第一个管理员账号
+- `WEBHOOK_CALLBACK_ENABLED`: Webhook 消息是否通知（默认 true）
 - `TELEGRAM_CONNECT_TIMEOUT`: Telegram 连接超时时间（秒，默认 30）
 - `TELEGRAM_READ_TIMEOUT`: Telegram 读取超时时间（秒，默认 30）
-- `TELEGRAM_POOL_TIMEOUT`: Telegram 连接池超时时间（秒，默认 60）
-- `TELEGRAM_CONNECTION_POOL_SIZE`: Telegram 连接池大小（默认 20）
+- `TELEGRAM_POOL_TIMEOUT`: Telegram 连接池超时时间（秒，默认 30）
+- `TELEGRAM_CONNECTION_POOL_SIZE`: Telegram 连接池大小（默认 50）
 
 ### 本地开发
 
@@ -178,7 +175,7 @@ python bot.py
 - ✅ 刷新数据源 (`/refresh`)
 - ✅ Token 管理 (`/tokens`)
 - ✅ 用户权限管理 (`/users`)
-- ✅ Webhook黑名单管理 (`/blacklist`)
+- ✅ Webhook 黑名单管理 (`/blacklist`)
 - ✅ 自定义识别词管理 (`/identify`)
 - ✅ 帮助和取消操作 (`/help`, `/cancel`)
 
@@ -214,7 +211,7 @@ python bot.py
 - 💾 配置持久化（用户权限、API 配置自动保存）
 - 🎯 媒体搜索和导入
 - 🔄 自动导入功能
-- 📢 支持emby Webhook自动入库/刷新
+- 📢 支持 emby Webhook 自动入库/刷新
 - 🧠 TMDB 智能搜索辅助（自动识别电影/电视剧类型）
 - 📺 TVDB 链接解析支持（自动识别 TVDB 链接并获取媒体信息）
 - 🎭 豆瓣链接解析支持（自动识别豆瓣链接并获取媒体信息）

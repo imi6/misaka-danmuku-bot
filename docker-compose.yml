@@ -10,7 +10,6 @@ services:
     volumes:
       - ./app:/app/app  # 持久化配置和日志数据
       # 说明：
-      # - config.json: 主配置文件（自动生成）
       # - user.json: 用户权限配置（自动生成）
       # - logs/: 日志文件目录
     
