@@ -27,7 +27,8 @@ services:
     environment:
       # Telegram机器人必填配置
       - TELEGRAM_BOT_TOKEN=机器人token，botfather获取
-      - ALLOWED_USER_IDS=用户id，多个用逗号分隔，get My Id 获取
+      - ALLOWED_USER_IDS=用户id，多个用逗号分隔，get My Id 获取（第一个用户默认为管理员）
+      # 选填，如果想多个管理员，需要这里设置，普通用户直接在bot中命令添加或者ALLOWED_USER_IDS添加
       - ADMIN_USER_IDS=管理员用户id，多个用逗号分隔，拥有完整功能权限
 
       # Misaka Danmaku API必填配置
@@ -54,12 +55,6 @@ services:
       - WEBHOOK_PORT=7769
       - WEBHOOK_API_KEY=自定义的Webhook密钥
       - WEBHOOK_CALLBACK_ENABLED=true
-
-      # Telegram连接配置（可选，网络不稳定时调整）
-      - TELEGRAM_CONNECT_TIMEOUT=30
-      - TELEGRAM_READ_TIMEOUT=30
-      - TELEGRAM_POOL_TIMEOUT=60
-      - TELEGRAM_CONNECTION_POOL_SIZE=20
 
       # 其他可选配置
       - API_TIMEOUT=60
