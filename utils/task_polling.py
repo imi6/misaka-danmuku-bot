@@ -347,7 +347,7 @@ class TaskPollingManager:
             List of real taskIds if available, None if still processing
         """
         try:
-            # logger.debug(f"🔍 开始轮询入库任务execution: {import_task_id}")
+            #logger.debug(f"🔍 查询 executionTaskIds: import_task_id={import_task_id}")
             # 调用/tasks/{taskId}/execution接口
             response = await asyncio.to_thread(
                 call_danmaku_api,
@@ -355,12 +355,36 @@ class TaskPollingManager:
                 endpoint=f"/tasks/{import_task_id}/execution"
             )
             
-            # logger.debug(f"📡 入库任务execution API响应: {response}")
+            #logger.debug(f"📡 execution API 响应: {response}")
             
             if response and response.get("success"):
                 data = response.get('data', {})
                 task_ids = []
                 
+                # 记录 execution 状态字段（如果存在）
+                status_raw = None
+                if isinstance(data, dict):
+                    status_raw = data.get('status')
+                status = (str(status_raw).strip().lower() if status_raw is not None else None)
+                #logger.debug(f"📊 execution 状态: raw={status_raw} normalized={status}")
+                
+                # 根据状态决定轮询行为
+                if status in {
+                    'failed', 'error', '已失败', '失败',
+                    'cancelled', 'canceled', '已取消', '取消'
+                }:
+                    logger.info(f"❌ 入库任务 {import_task_id} 状态失败/取消，终止轮询: {status}")
+                    return []
+                elif status in {
+                    'completed', 'finished', 'success', '已完成', '完成', '成功', '已成功'
+                }:
+                    logger.info(f"✅ 入库任务 {import_task_id} 状态已完成，尝试提取真实taskIds")
+                elif status in {
+                    'running', '正在执行', '等待中', 'waiting', '已暂停', 'paused'
+                } or status is None or status == 'null':
+                    # logger.debug(f"⏳ 入库任务 {import_task_id} 状态未完成（{status}），继续等待")
+                    return None
+                # 继续尝试提取真实taskIds
                 if isinstance(data, dict):
                     # 检查是否有多任务ID字段
                     if 'executionTaskIds' in data and isinstance(data['executionTaskIds'], list):
@@ -390,12 +414,17 @@ class TaskPollingManager:
                     task_ids.extend(data)
                 
                 if task_ids:
-                    # logger.info(f"✅ 入库任务 {import_task_id} 获取到taskIds: {task_ids}")
+                    logger.debug(f"📦 入库任务 {import_task_id} 提取到真实taskIds: {task_ids}")
                     # 确保所有taskId都是字符串
                     return [str(task_id) for task_id in task_ids]
                 else:
-                    # logger.debug(f"⏳ 入库任务 {import_task_id} 尚未生成executionTaskId")
-                    return None
+                    # 若状态已完成但没有生成executionTaskId，返回空列表表示终止；否则继续等待
+                    if status in {'completed', 'finished', 'success', '已完成', '完成', '成功', '已成功'}:
+                        logger.warning(f"⚠️ 入库任务 {import_task_id} 已完成但未产生执行ID")
+                        return []
+                    else:
+                        logger.debug(f"⏳ 入库任务 {import_task_id} 尚未生成executionTaskId，继续等待")
+                        return None
             elif response and response.get("status_code") == 404:
                 # 任务还未准备好，继续等待
                 # logger.debug(f"⏳ 入库任务 {import_task_id} 返回404，任务尚未准备好")
