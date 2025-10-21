@@ -83,17 +83,31 @@ class TaskPollingManager:
                     
                     all_real_task_ids = []
                     all_tasks_completed = True
+                    terminated_due_to_failure = False
                     # 轮询所有入库任务的execution接口
                     for task_id in all_task_ids:
                         # logger.info(f"🔍 轮询入库任务execution: {task_id} (已运行 {elapsed_time})")
                         real_task_ids = await self._poll_import_task_execution(task_id)
-                        if real_task_ids:
+                        if real_task_ids is None:
+                            # 未完成，继续等待
+                            all_tasks_completed = False
+                        elif len(real_task_ids) > 0:
+                            # 取到真实taskIds
                             all_real_task_ids.extend(real_task_ids)
                             # logger.info(f"✅ 入库任务 {task_id} 获取到executionTaskIds: {real_task_ids}")
                         else:
-                            # logger.info(f"⏳ 入库任务 {task_id} 仍在处理中，继续等待")
-                            all_tasks_completed = False
-                            
+                            # 失败或取消，立即终止该入库任务的轮询
+                            terminated_due_to_failure = True
+                            break
+                    # 终态但未产生真实taskId（失败/取消）
+                    if all_tasks_completed and not all_real_task_ids:
+                        terminated_due_to_failure = True
+                    # 终止：失败/取消
+                    if terminated_due_to_failure:
+                        logger.warning(f"⚠️ 入库任务 {import_task_id} 所有execution接口已执行完毕，但未获取到任何taskId")
+                        completed_import_tasks.append(import_task_id)
+                        timeout_import_tasks.append((import_task_id, original_task))
+                        continue
                     # 只有当所有入库任务的execution接口都执行完毕并获取到真实的taskId后，才创建新的任务
                     if all_tasks_completed and all_real_task_ids:
                         # 获取到所有executionTaskId，创建新的任务
@@ -111,26 +125,33 @@ class TaskPollingManager:
                         self._tasks[new_task_id] = new_task
                         logger.info(f"✅ 入库任务 {import_task_id} 解析完成，所有execution接口已执行完毕，创建新任务 {new_task_id}，executionTaskIds: {all_real_task_ids}")
                         completed_import_tasks.append(import_task_id)
-                    elif all_tasks_completed:
-                        # 所有任务都已完成但没有获取到任何taskId
-                        logger.warning(f"⚠️ 入库任务 {import_task_id} 所有execution接口已执行完毕，但未获取到任何taskId")
-                        completed_import_tasks.append(import_task_id)
-                        timeout_import_tasks.append((import_task_id, original_task))
-                        continue
                     
                     all_real_task_ids = []
                     all_tasks_completed = True
+                    terminated_due_to_failure = False
                     # 轮询所有入库任务的execution接口
                     for task_id in all_task_ids:
                         # logger.info(f"🔍 轮询入库任务execution: {task_id} (已运行 {elapsed_time})")
                         real_task_ids = await self._poll_import_task_execution(task_id)
-                        if real_task_ids:
+                        if real_task_ids is None:
+                            # 未完成，继续等待
+                            all_tasks_completed = False
+                        elif len(real_task_ids) > 0:
+                            # 取到真实taskIds
                             all_real_task_ids.extend(real_task_ids)
                             # logger.info(f"✅ 入库任务 {task_id} 获取到executionTaskIds: {real_task_ids}")
                         else:
-                            # logger.info(f"⏳ 入库任务 {task_id} 仍在处理中，继续等待")
-                            all_tasks_completed = False
-                            
+                            # 失败或取消，立即终止该入库任务的轮询
+                            terminated_due_to_failure = True
+                            break
+                    # 终态但未产生真实taskId（失败/取消）
+                    if all_tasks_completed and not all_real_task_ids:
+                        terminated_due_to_failure = True
+                    # 终止：失败/取消
+                    if terminated_due_to_failure:
+                        completed_import_tasks.append(import_task_id)
+                        timeout_import_tasks.append((import_task_id, original_task))
+                        continue
                     # 只有当所有入库任务的execution接口都执行完毕并获取到真实的taskId后，才创建新的任务
                     if all_tasks_completed and all_real_task_ids:
                         # 获取到所有executionTaskId，创建新的任务
@@ -148,12 +169,6 @@ class TaskPollingManager:
                         self._tasks[new_task_id] = new_task
                         # logger.info(f"✅ 入库任务 {import_task_id} 解析完成，所有execution接口已执行完毕，创建新任务 {new_task_id}，executionTaskIds: {all_real_task_ids}")
                         completed_import_tasks.append(import_task_id)
-                    elif all_tasks_completed:
-                        # 所有任务都已完成但没有获取到任何taskId
-                        # logger.warning(f"⚠️ 入库任务 {import_task_id} 所有execution接口已执行完毕，但未获取到任何taskId")
-                        completed_import_tasks.append(import_task_id)
-                    # else:
-                        # logger.info(f"⏳ 入库任务 {import_task_id} 仍有任务在处理中，继续等待")
                  
                 # 处理超时任务
                 for timeout_task_id, timeout_task in timeout_import_tasks:
@@ -747,7 +762,7 @@ class TaskPollingManager:
                             self._import_tasks[main_task_id] = {
                                 'task': task,
                                 'start_time': datetime.now(self.timezone),
-                                'timeout_minutes': 30,
+                                'timeout_minutes': 60,
                                 'all_task_ids': task_ids  # 保存所有task_ids
                             }
                             logger.info(f"📝 记录入库任务: {task_id}, 待解析taskIds: {task_ids}")
